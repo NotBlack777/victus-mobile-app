@@ -1,0 +1,8 @@
+{
+  "name": "Victus Cloud",
+  "description": "Unified mobile ecosystem web app for Victus Cloud — website, billing, server control panel, drive storage, support hub, and system status with customizable appearance and themes.",
+  "prompt": "Rewrite the Victus Cloud Android app as a React application preserving all core features and ecosystem panels.",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
