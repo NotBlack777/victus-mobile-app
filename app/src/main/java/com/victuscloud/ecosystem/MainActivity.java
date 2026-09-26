@@ -103,6 +103,8 @@ public class MainActivity extends ComponentActivity {
     private final TextView[] dockChips = new TextView[DOCK_URLS.length];
     private FrameLayout errorOverlay;
     private TextView errorMessage;
+    private TextView errorGlyph;
+    private TextView errorRetryButton;
 
     private WebViewAssetLoader assetLoader;
     private int selectedDock = TAB_HOME;
@@ -261,7 +263,7 @@ public class MainActivity extends ComponentActivity {
         // Thin progress bar directly under the top bar.
         pageProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         pageProgress.setMax(100);
-        pageProgress.setProgressTintList(ColorStateList.valueOf(colorOf(R.color.progress)));
+        pageProgress.setProgressTintList(ColorStateList.valueOf(ThemeManager.solid(this)));
         pageProgress.setVisibility(View.GONE);
         content.addView(pageProgress,
                 new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(3)));
@@ -290,6 +292,7 @@ public class MainActivity extends ComponentActivity {
         topBar.setGravity(Gravity.CENTER_VERTICAL);
         topBar.setBackgroundColor(colorOf(R.color.surface_topbar));
         topBar.setPadding(dp(8), dp(6), dp(8), dp(6));
+        topBar.setElevation(dp(3));
         content.addView(topBar, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -385,6 +388,7 @@ public class MainActivity extends ComponentActivity {
         chip.setGravity(Gravity.CENTER);
         chip.setMinHeight(dp(48));               // ≥48dp touch target at every density
         chip.setPadding(dp(18), 0, dp(18), 0);
+        chip.setForeground(ContextCompat.getDrawable(this, resolveAttr(android.R.attr.selectableItemBackground)));
         chip.setOnClickListener(v -> loadTab(index));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -394,12 +398,11 @@ public class MainActivity extends ComponentActivity {
         return chip;
     }
 
-    /** Selected = brand gradient; unselected = glassy chip with a soft stroke. */
+    /** Selected = live theme gradient; unselected = glassy chip with a soft stroke. */
     private void styleChip(TextView chip, boolean selected) {
         GradientDrawable bg;
         if (selected) {
-            bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                    new int[]{colorOf(R.color.brand_blue), colorOf(R.color.brand_violet)});
+            bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR, ThemeManager.gradient(this));
             chip.setTextColor(colorOf(R.color.chip_text_selected));
         } else {
             bg = new GradientDrawable();
@@ -422,7 +425,7 @@ public class MainActivity extends ComponentActivity {
             chip.setScaleX(1f);
             chip.setScaleY(1f);
             styleChip(chip, selected);
-            if (selected && animate) {
+            if (selected && animate && !ThemeManager.isReduceMotion(this)) {
                 // Animator-driven pulse — choreographed, not a fixed-frame hack.
                 chip.animate().scaleX(1.07f).scaleY(1.07f).setDuration(110)
                         .withEndAction(() -> chip.animate()
@@ -553,6 +556,7 @@ public class MainActivity extends ComponentActivity {
         backButton.setEnabled(webView != null && webView.canGoBack());
         backButton.setAlpha(backButton.isEnabled() ? 1f : 0.38f);
         selectDock(indexForUrl(url), false);
+        injectThemeIntoWebView(); // keep home.html in sync with the saved theme
     }
 
     void onPageProgress(int newProgress) {
@@ -564,6 +568,7 @@ public class MainActivity extends ComponentActivity {
     /** The "Tools" overflow menu — theme-aware dialog, no custom pixel math. */
     void showToolsMenu() {
         final String[] items = {
+                getString(R.string.tools_settings),
                 getString(R.string.tools_open_browser),
                 getString(R.string.tools_copy_link),
                 getString(R.string.tools_share_link),
@@ -582,7 +587,10 @@ public class MainActivity extends ComponentActivity {
     private void onToolSelected(int which) {
         String current = webView.getUrl() == null ? HOME_URL : webView.getUrl();
         switch (which) {
-            case 0: { // open in browser
+            case 0: // settings / appearance
+                SettingsSheet.show(this);
+                break;
+            case 1: { // open in browser
                 Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(current));
                 intent.addCategory(Intent.CATEGORY_BROWSABLE);
                 try {
@@ -592,32 +600,32 @@ public class MainActivity extends ComponentActivity {
                 }
                 break;
             }
-            case 1: { // copy link
+            case 2: { // copy link
                 ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
                 cm.setPrimaryClip(ClipData.newPlainText("Victus Cloud", current));
                 toast(getString(R.string.link_copied));
                 break;
             }
-            case 2: { // share link
+            case 3: { // share link
                 Intent send = new Intent(Intent.ACTION_SEND)
                         .setType("text/plain")
                         .putExtra(Intent.EXTRA_TEXT, current);
                 startActivity(Intent.createChooser(send, null));
                 break;
             }
-            case 3: // test (beta) panel
+            case 4: // test (beta) panel
                 loadUrlInternal("https://testpanel.victuscloud.com");
                 break;
-            case 4:
+            case 5:
                 loadTab(5); // Support
                 break;
-            case 5:
+            case 6:
                 loadTab(6); // Status
                 break;
-            case 6:
+            case 7:
                 loadUrlInternal("https://victuscloud.com/marketplace");
                 break;
-            case 7:
+            case 8:
                 confirmClearSession();
                 break;
         }
@@ -661,26 +669,31 @@ public class MainActivity extends ComponentActivity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setGravity(Gravity.CENTER);
-        box.setPadding(dp(32), 0, dp(32), 0);
+        box.setPadding(dp(28), dp(32), dp(28), dp(32));
+        GradientDrawable cardBg = new GradientDrawable();
+        cardBg.setColor(colorOf(R.color.sheet_bg));
+        cardBg.setCornerRadius(dp(28));
+        cardBg.setStroke(dp(1), colorOf(R.color.sheet_stroke));
+        box.setBackground(cardBg);
+        box.setElevation(dp(10));
         FrameLayout.LayoutParams boxParams = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER);
+        boxParams.leftMargin = dp(28);
+        boxParams.rightMargin = dp(28);
         errorOverlay.addView(box, boxParams);
 
-        TextView glyph = new TextView(this);
-        glyph.setText("!");
-        glyph.setTextSize(30); // SP
-        glyph.setTextColor(colorOf(R.color.chip_text_selected));
-        glyph.setTypeface(glyph.getTypeface(), android.graphics.Typeface.BOLD);
-        glyph.setGravity(Gravity.CENTER);
-        GradientDrawable glyphBg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{colorOf(R.color.brand_blue), colorOf(R.color.brand_teal)});
-        glyphBg.setCornerRadius(dp(32));
-        glyph.setBackground(glyphBg);
+        errorGlyph = new TextView(this);
+        errorGlyph.setText("!");
+        errorGlyph.setTextSize(30); // SP
+        errorGlyph.setTextColor(colorOf(R.color.chip_text_selected));
+        errorGlyph.setTypeface(errorGlyph.getTypeface(), android.graphics.Typeface.BOLD);
+        errorGlyph.setGravity(Gravity.CENTER);
+        errorGlyph.setBackground(buildAccentDrawable(dp(32)));
         LinearLayout.LayoutParams glyphParams = new LinearLayout.LayoutParams(dp(64), dp(64));
         glyphParams.bottomMargin = dp(20);
         glyphParams.gravity = Gravity.CENTER_HORIZONTAL;
-        box.addView(glyph, glyphParams);
+        box.addView(errorGlyph, glyphParams);
 
         TextView titleView = new TextView(this);
         titleView.setText(R.string.error_title);
@@ -699,16 +712,16 @@ public class MainActivity extends ComponentActivity {
         msgParams.topMargin = dp(8);
         box.addView(errorMessage, msgParams);
 
-        TextView retry = buildOverlayButton(getString(R.string.retry), true);
+        errorRetryButton = buildOverlayButton(getString(R.string.retry), true);
         LinearLayout.LayoutParams retryParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         retryParams.topMargin = dp(24);
-        retry.setOnClickListener(v -> {
+        errorRetryButton.setOnClickListener(v -> {
             hideErrorOverlay();
             if (lastErrorUrl != null) loadUrlInternal(lastErrorUrl);
             else webView.reload();
         });
-        box.addView(retry, retryParams);
+        box.addView(errorRetryButton, retryParams);
 
         TextView home = buildOverlayButton(getString(R.string.go_home), false);
         LinearLayout.LayoutParams homeParams = new LinearLayout.LayoutParams(
@@ -732,20 +745,85 @@ public class MainActivity extends ComponentActivity {
         button.setTypeface(button.getTypeface(), android.graphics.Typeface.BOLD);
         button.setGravity(Gravity.CENTER);
         button.setMinHeight(dp(48)); // ≥48dp touch target
-        GradientDrawable bg = new GradientDrawable();
-        bg.setCornerRadius(dp(16));
+        button.setForeground(ContextCompat.getDrawable(this, resolveAttr(android.R.attr.selectableItemBackground)));
         if (primary) {
-            bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                    new int[]{colorOf(R.color.brand_blue), colorOf(R.color.brand_violet)});
-            bg.setCornerRadius(dp(16));
+            button.setBackground(buildAccentDrawable(dp(16)));
             button.setTextColor(colorOf(R.color.chip_text_selected));
         } else {
+            GradientDrawable bg = new GradientDrawable();
+            bg.setCornerRadius(dp(16));
             bg.setColor(colorOf(R.color.chip_bg));
             bg.setStroke(dp(1), colorOf(R.color.chip_stroke));
+            button.setBackground(bg);
             button.setTextColor(colorOf(R.color.chip_text));
         }
-        button.setBackground(bg);
         return button;
+    }
+
+    /** Rounded-rect drawable painted with the live theme gradient (2 or 3 stops). */
+    private GradientDrawable buildAccentDrawable(int radiusPx) {
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR, ThemeManager.gradient(this));
+        bg.setCornerRadius(radiusPx);
+        return bg;
+    }
+
+    /**
+     * Applies the currently selected theme (preset or custom) to every native
+     * accent surface — dock chips, progress bar tint, error glyph/retry button
+     * — and, if the bundled home screen is currently loaded, live-updates its
+     * CSS variables via a tiny injected script. Nothing here recreates the
+     * Activity or reloads the WebView, so switching themes is effectively free.
+     */
+    void applyDynamicAccent() {
+        if (dockChips[0] != null) {
+            for (int i = 0; i < dockChips.length; i++) {
+                styleChip(dockChips[i], i == selectedDock);
+            }
+        }
+        if (pageProgress != null) {
+            pageProgress.setProgressTintList(ColorStateList.valueOf(ThemeManager.solid(this)));
+        }
+        if (errorGlyph != null) {
+            errorGlyph.setBackground(buildAccentDrawable(dp(32)));
+        }
+        if (errorRetryButton != null) {
+            errorRetryButton.setBackground(buildAccentDrawable(dp(16)));
+        }
+        injectThemeIntoWebView();
+    }
+
+    /** Pushes the live accent gradient + reduce-motion flag into home.html as CSS
+     *  custom properties. Only runs against our own bundled asset origin — a
+     *  no-op (and harmless either way) on every other site in the WebView. */
+    private void injectThemeIntoWebView() {
+        if (webView == null) return;
+        String url = webView.getUrl();
+        if (url == null || !url.startsWith(ASSETS_ORIGIN)) return;
+
+        int[] g = ThemeManager.gradient(this);
+        int a = g[0];
+        int c = g[g.length - 1];
+        int b = g.length > 2 ? g[1] : midColor(a, c);
+        boolean reduceMotion = ThemeManager.isReduceMotion(this);
+
+        String script = "(function(){"
+                + "var s=document.documentElement.style;"
+                + "s.setProperty('--accent-1','" + ThemeManager.hex(a) + "');"
+                + "s.setProperty('--accent-2','" + ThemeManager.hex(b) + "');"
+                + "s.setProperty('--accent-3','" + ThemeManager.hex(c) + "');"
+                + "s.setProperty('--accent-1-rgb','" + ThemeManager.rgb(a) + "');"
+                + "s.setProperty('--accent-2-rgb','" + ThemeManager.rgb(b) + "');"
+                + "s.setProperty('--accent-3-rgb','" + ThemeManager.rgb(c) + "');"
+                + "document.documentElement.classList.toggle('reduce-motion'," + reduceMotion + ");"
+                + "})();";
+        webView.evaluateJavascript(script, null);
+    }
+
+    private static int midColor(int c1, int c2) {
+        int r = (android.graphics.Color.red(c1) + android.graphics.Color.red(c2)) / 2;
+        int g = (android.graphics.Color.green(c1) + android.graphics.Color.green(c2)) / 2;
+        int b = (android.graphics.Color.blue(c1) + android.graphics.Color.blue(c2)) / 2;
+        return android.graphics.Color.rgb(r, g, b);
     }
 
     void showError(String message, String failingUrl) {
@@ -753,9 +831,10 @@ public class MainActivity extends ComponentActivity {
         errorMessage.setText(message + "\n" + getString(R.string.error_offline_hint));
         pageProgress.setVisibility(View.GONE);
         if (errorOverlay.getVisibility() != View.VISIBLE) {
+            boolean reduceMotion = ThemeManager.isReduceMotion(this);
             errorOverlay.setAlpha(0f);
             errorOverlay.setVisibility(View.VISIBLE);
-            errorOverlay.animate().alpha(1f).setDuration(240).start();
+            errorOverlay.animate().alpha(1f).setDuration(reduceMotion ? 0 : 240).start();
         }
     }
 

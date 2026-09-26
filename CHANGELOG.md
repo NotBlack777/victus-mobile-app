@@ -1,3 +1,46 @@
+# Changelog — Victus Cloud 2.1.0 (theming + settings pass)
+
+Native chrome + `home.html` both restyled around a new **Purple → Black** brand
+identity, plus a real **Settings** screen (Tools menu → **Settings**) for
+personalizing it — no extra libraries, no measurable resource cost.
+
+## Appearance & Settings
+
+- **New default look: Purple → Black.** Every accent surface — the selected
+  dock chip, primary buttons, the progress bar, the error screen's glyph and
+  retry button, the launcher icon and splash screen — now uses a purple → deep
+  violet → near-black gradient instead of the old blue/teal brand.
+- **Settings sheet** — tap the ⋮ menu → **Settings** for a slide-up sheet with:
+  - **Theme presets**: *Purple → Black* (new default), *Blue → Teal* (the
+    original brand, kept as an option), and *Custom*.
+  - **Custom theme**: pick any two colors (a start/end gradient) or flip
+    "Solid color" for a single flat accent, from a curated swatch palette or a
+    free `#RRGGBB` hex field with a live preview.
+  - **Reduce animations** switch — turns off the dock-chip pulse and other
+    incidental motion for a lighter feel on any device.
+  - A live gradient preview and one-tap **Reset to default**.
+- Every change is written straight to a tiny `SharedPreferences`-backed
+  `ThemeManager` and applied immediately — native views restyle in place and
+  `home.html`'s CSS variables are updated via a one-line injected script — so
+  switching themes never recreates the Activity or reloads the WebView.
+- `ThemeManager` + the settings sheet (`SettingsSheet`) are built entirely from
+  plain Android views (no Material Components / Jetpack Compose dependency
+  added), keeping the APK size and runtime footprint essentially unchanged.
+
+## Visual polish
+
+- Dock chips, the Tools list buttons, and settings-sheet controls all gained
+  proper ripple feedback; the top bar now casts a subtle elevation shadow.
+- The error screen is now a centered, rounded, bordered card instead of
+  full-bleed text.
+- `home.html` gained subtle glassmorphism (`backdrop-filter: blur(...)`) on
+  the hero panel and cards, deeper shadows, and a `prefers-reduced-motion`-style
+  `reduce-motion` class driven by the new Settings toggle.
+- Launcher icon, adaptive icon, monochrome icon and splash screen regenerated
+  (`tools/generate_icons.py`) with the new Purple → Black gradient.
+
+---
+
 # Changelog — Victus Cloud 2.0.0 (rebuild)
 
 Rebuilt from the legacy `VictusCloud (2).apk` + notes (see `/Legacy`). Core purpose

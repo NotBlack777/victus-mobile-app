@@ -18,9 +18,10 @@ import zlib
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "app", "src", "main", "res"))
 
-BLUE = (47, 129, 255)      # #2F81FF
-VIOLET = (109, 93, 252)    # #6D5DFC
-TEAL = (19, 200, 166)      # #13C8A6
+# Purple -> Black brand identity (matches ThemeManager's default preset).
+BLUE = (192, 132, 252)     # #C084FC bright orchid purple (kept the name BLUE for
+VIOLET = (124, 58, 237)    # #7C3AED deep violet                minimal diff below)
+TEAL = (11, 0, 20)         # #0B0014 near-black
 
 # "V" stroke geometry, in canvas fractions centered on (0.5, 0.5), y-down.
 V_A = (-0.200, -0.185)
@@ -38,7 +39,7 @@ def _mix3(c1, c2, t):
 
 
 def _brand_gradient(t):
-    """blue -> violet -> teal along a diagonal (t in 0..1)."""
+    """purple -> violet -> near-black along a diagonal (t in 0..1)."""
     t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
     if t < 0.5:
         return _mix3(BLUE, VIOLET, t * 2.0)
