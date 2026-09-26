@@ -72,6 +72,7 @@ public class MainActivity extends ComponentActivity {
 
     /** Origin that serves the bundled assets over https (no file:// needed). */
     private static final String ASSETS_ORIGIN = "https://appassets.androidplatform.net";
+    private static final String ASSETS_HOST = "appassets.androidplatform.net";
     private static final String HOME_URL = ASSETS_ORIGIN + "/assets/home.html";
 
     private static final int TAB_HOME = 0;
@@ -108,7 +109,10 @@ public class MainActivity extends ComponentActivity {
     private TextView errorWebViewUpdateLink;
 
     private WebViewAssetLoader assetLoader;
-    private int selectedDock = TAB_HOME;
+    /** -1 = no tab styled yet. Forces the very first {@link #selectDock} call
+     *  to actually apply the "selected" style instead of being skipped by the
+     *  no-op fast path (which compares against the previous selection). */
+    private int selectedDock = -1;
     private String lastErrorUrl;
 
     // ------------------------------------------------------ activity results
@@ -161,9 +165,9 @@ public class MainActivity extends ComponentActivity {
         });
 
         if (savedInstanceState != null) {
-            selectedDock = savedInstanceState.getInt(KEY_SELECTED_TAB, TAB_HOME);
+            int restoredTab = savedInstanceState.getInt(KEY_SELECTED_TAB, TAB_HOME);
             webView.restoreState(savedInstanceState);
-            selectDock(selectedDock, false);
+            selectDock(restoredTab, false);
         } else {
             String startUrl = resolveStartUrl(getIntent());
             if (startUrl == null) startUrl = HOME_URL;
@@ -187,6 +191,21 @@ public class MainActivity extends ComponentActivity {
         super.onSaveInstanceState(outState);
         outState.putInt(KEY_SELECTED_TAB, selectedDock);
         webView.saveState(outState);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // Stops JS timers/animations/video in the WebView while backgrounded —
+        // without this the page keeps ticking (and draining battery/CPU) the
+        // whole time the app isn't even visible.
+        if (webView != null) webView.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (webView != null) webView.onResume();
     }
 
     @Override
@@ -415,18 +434,31 @@ public class MainActivity extends ComponentActivity {
         chip.setBackground(bg);
     }
 
+    /**
+     * Only restyles the chip(s) whose selected state actually changes.
+     * {@code onPageLoadStarted}/{@code onPageLoadFinished} call this on every
+     * navigation event (redirects, in-page link taps, etc.), so re-allocating
+     * a {@link GradientDrawable} and re-invalidating all 7 chips every single
+     * time — even when the active tab hasn't changed — was pure wasted work.
+     */
     private void selectDock(int index, boolean animate) {
         if (index < 0 || index >= DOCK_URLS.length) index = TAB_HOME;
+        int previous = selectedDock;
         selectedDock = index;
-        for (int i = 0; i < dockChips.length; i++) {
-            final TextView chip = dockChips[i];
-            boolean selected = i == index;
-            // Always settle any in-flight pulse so chips can't get stuck scaled.
+        if (previous != index && previous >= 0 && previous < dockChips.length) {
+            TextView old = dockChips[previous];
+            old.animate().cancel();
+            old.setScaleX(1f);
+            old.setScaleY(1f);
+            styleChip(old, false);
+        }
+        if (previous != index) {
+            final TextView chip = dockChips[index];
             chip.animate().cancel();
             chip.setScaleX(1f);
             chip.setScaleY(1f);
-            styleChip(chip, selected);
-            if (selected && animate && !ThemeManager.isReduceMotion(this)) {
+            styleChip(chip, true);
+            if (animate && !ThemeManager.isReduceMotion(this)) {
                 // Animator-driven pulse — choreographed, not a fixed-frame hack.
                 chip.animate().scaleX(1.07f).scaleY(1.07f).setDuration(110)
                         .withEndAction(() -> chip.animate()
@@ -463,7 +495,10 @@ public class MainActivity extends ComponentActivity {
         if (url == null) return selectedDock;
         Uri uri = Uri.parse(url);
         String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(java.util.Locale.US);
-        if (ASSETS_ORIGIN.contains(host)) return TAB_HOME;
+        // Exact match only — a substring/contains() check here would be
+        // vacuously true for an empty host and could false-match any real
+        // domain that happens to be a substring of ASSETS_ORIGIN.
+        if (ASSETS_HOST.equals(host)) return TAB_HOME;
         String path = uri.getPath() == null ? "" : uri.getPath();
         switch (host) {
             case "billing.victuscloud.com": return 2;

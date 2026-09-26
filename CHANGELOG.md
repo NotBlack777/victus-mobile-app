@@ -1,3 +1,48 @@
+# Changelog — Victus Cloud 2.1.1 (bug sweep + performance pass)
+
+A follow-up audit of the whole app: one real navigation-state bug, a
+device-clock/stale-WebView-friendly certificate error screen, one battery/CPU
+fix, and one scroll-performance fix. No new dependencies, no size increase.
+
+## Fixes
+
+- **WebView now actually pauses in the background.** `MainActivity` never
+  called `WebView#onPause()`/`#onResume()`, so JavaScript timers, animations
+  and any playing media in the loaded page kept running — and draining
+  battery/CPU — the whole time the app was backgrounded, until Android's own
+  (slower, less thorough) app-standby throttling eventually kicked in. Now
+  wired into `onPause()`/`onResume()`.
+- **Dock-chip restyle on every navigation, even when nothing changed.**
+  `onPageLoadStarted`/`onPageLoadFinished` fire on every redirect and in-page
+  navigation, and previously each one re-allocated a `GradientDrawable` and
+  re-invalidated the view for **all 7** dock chips — even when the active tab
+  hadn't changed at all. It now only touches the (at most two) chips whose
+  selected state actually flips, eliminating that work entirely for the very
+  common "still on the same tab" case.
+- **`home.html` scroll jank from stacked `backdrop-filter`.** The hero panel
+  and all 6 core-panel cards each ran their own live `backdrop-filter: blur()`
+  — one of the most GPU-expensive CSS effects, and each one has to be
+  recomputed as the page scrolls under the fixed background grid. Removed it
+  from the 6 repeated cards (kept only on the single hero panel); the glass
+  look is unchanged since the panel's translucent gradient already carries it.
+- **Fixed a real substring bug in tab detection.** `indexForUrl()` matched the
+  bundled-assets origin with `ASSETS_ORIGIN.contains(host)` instead of an
+  exact host comparison — vacuously true whenever `host` was empty, and in
+  principle a false match for any real domain that happens to be a substring
+  of the assets origin string. Now compares the host exactly.
+- **Certificate-error screen** (`SslError.SSL_UNTRUSTED`, the "certificate
+  error 3" report): the connection is still always cancelled — proceeding
+  anyway would be a real security hole and a Play Store policy violation —
+  but the message is now specific per SSL error code, with an in-app "Update
+  WebView" shortcut to the Play Store for the two codes (`UNTRUSTED` /
+  `NOT_YET_VALID`) usually caused by a stale WebView component or a wrong
+  device clock rather than an actual attack.
+- Removed dead code found during the audit: an unused `Theme.Victus.Dialog.Sheet`
+  style, an unused `switch_track_off` color, and the now-superseded generic
+  `error_ssl` string.
+
+---
+
 # Changelog — Victus Cloud 2.1.0 (theming + settings pass)
 
 Native chrome + `home.html` both restyled around a new **Purple → Black** brand

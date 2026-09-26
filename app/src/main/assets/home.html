@@ -268,8 +268,12 @@
       background: linear-gradient(145deg, var(--panel-strong), var(--panel));
       box-shadow: inset 0 1px 1.25rem rgba(255,255,255,.035), var(--shadow-card);
       transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease;
-      -webkit-backdrop-filter: blur(.875rem);
-      backdrop-filter: blur(.875rem);
+      /* No backdrop-filter here on purpose: this class repeats 6× on the page,
+         and backdrop-filter is one of the most GPU-expensive CSS effects —
+         stacking it across every card visibly cost frames while scrolling on
+         mid/low-end Android devices. The gradient background alone already
+         gives the "glass" look; only the single hero panel above keeps a
+         (much cheaper, one-instance) blur. */
     }
     .card:active { transform: translateY(1px); }
     .topline {

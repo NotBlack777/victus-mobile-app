@@ -20,5 +20,4 @@
     <color name="sheet_stroke">#26C084FC</color>
     <color name="sheet_handle">#4DE7D9FB</color>
     <color name="swatch_stroke">#40FFFFFF</color>
-    <color name="switch_track_off">#40FFFFFF</color>
 </resources>
