@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Victus Cloud</string>
+
+    <string name="tab_home">Home</string>
+    <string name="tab_website">Website</string>
+    <string name="tab_billing">Billing</string>
+    <string name="tab_control">Control</string>
+    <string name="tab_drive">Drive</string>
+    <string name="tab_support">Support</string>
+    <string name="tab_status">Status</string>
+
+    <string name="action_back">Back</string>
+    <string name="action_refresh">Refresh</string>
+    <string name="action_tools">Tools</string>
+
+    <string name="tools_open_browser">Open in browser</string>
+    <string name="tools_copy_link">Copy link</string>
+    <string name="tools_share_link">Share link</string>
+    <string name="tools_test_panel">Open test panel</string>
+    <string name="tools_support">Support</string>
+    <string name="tools_status">System status</string>
+    <string name="tools_marketplace">Marketplace</string>
+    <string name="tools_clear_session">Clear app session</string>
+
+    <string name="clear_session_title">Clear app session?</string>
+    <string name="clear_session_message">This clears WebView cookies, storage, cache, and panel sessions in the app.</string>
+    <string name="clear_session_confirm">Clear</string>
+    <string name="clear_session_done">Session cleared</string>
+    <string name="cancel">Cancel</string>
+
+    <string name="error_title">Can\'t reach Victus Cloud</string>
+    <string name="error_offline_hint">Check your connection, then try again.</string>
+    <string name="error_ssl">Secure connection failed (certificate error %1$d). The page was blocked for your safety.</string>
+    <string name="retry">Retry</string>
+    <string name="go_home">Go home</string>
+
+    <string name="downloading">Downloading %1$s…</string>
+    <string name="download_done">Saved %1$s to Downloads/VictusCloud</string>
+    <string name="download_failed">Download failed (%1$s)</string>
+    <string name="download_permission_denied">Storage permission denied — download cancelled</string>
+
+    <string name="link_copied">Link copied</string>
+    <string name="no_app_to_handle">No app installed that can open this link</string>
+</resources>

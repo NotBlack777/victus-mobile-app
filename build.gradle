@@ -1,0 +1,4 @@
+// Top-level build file. AGP version lives here so dependabot-style bumps stay one-line.
+plugins {
+    id 'com.android.application' version '8.7.3' apply false
+}

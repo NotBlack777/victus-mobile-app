@@ -1,12 +1,15 @@
-# Gradle files
+# Gradle
 .gradle/
 build/
+*/build/
 
-# Local configuration file (sdk path, etc)
+# Local configuration (sdk paths, etc.)
 local.properties
 
-# Log/OS Files
+# Log/OS files
 *.log
+.DS_Store
+Thumbs.db
 
 # Android Studio generated files and folders
 captures/
@@ -16,14 +19,14 @@ captures/
 *.apk
 output-metadata.json
 
-# IntelliJ
+# IntelliJ / Android Studio
 *.iml
 .idea/
 misc.xml
 deploymentTargetDropDown.xml
 render.experimental.xml
 
-# Keystore files
+# Keystore files — never commit signing material
 *.jks
 *.keystore
 
@@ -32,3 +35,6 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# Kotlin
+.kotlin/
