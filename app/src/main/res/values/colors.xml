@@ -1,26 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Brand identity (shared between light and dark) -->
-    <color name="brand_blue">#2F81FF</color>
-    <color name="brand_violet">#6D5DFC</color>
-    <color name="brand_teal">#13C8A6</color>
+    <!-- Brand identity — Purple → Black. Shared fallback/default values; the
+         *live* accent used by native chrome + home.html comes from
+         ThemeManager (SharedPreferences), which defaults to these same
+         three stops, so first launch and "Reset to default" always match. -->
+    <color name="brand_a">#C084FC</color>
+    <color name="brand_b">#7C3AED</color>
+    <color name="brand_c">#0B0014</color>
 
     <!-- Chrome colors — these are the LIGHT values; values-night/colors.xml
          overrides every one of them so the native chrome follows the system theme
          instead of being hardcoded dark. -->
-    <color name="window_bg">#F2F6FC</color>
-    <color name="surface_topbar">#E6F7FAFF</color>
-    <color name="divider">#140A1E32</color>
+    <color name="window_bg">#F6F2FC</color>
+    <color name="surface_topbar">#E6FFFFFF</color>
+    <color name="divider">#295B21A6</color>
     <color name="chip_bg">#B3FFFFFF</color>
-    <color name="chip_stroke">#2E0B3A66</color>
-    <color name="chip_text">#13233F</color>
+    <color name="chip_stroke">#3D6D28D9</color>
+    <color name="chip_text">#241333</color>
     <color name="chip_text_selected">#FFFFFF</color>
-    <color name="icon_tint">#24466E</color>
-    <color name="title_text">#0B1830</color>
-    <color name="overlay_bg">#FAFBFE</color>
-    <color name="error_title">#0B1830</color>
-    <color name="error_text">#5A6B85</color>
-    <color name="progress">@color/brand_blue</color>
-    <color name="splash_bg">#FFFFFF</color>
-    <color name="adaptive_icon_bg">#0B1226</color>
+    <color name="icon_tint">#3B2159</color>
+    <color name="title_text">#1A0B2E</color>
+    <color name="overlay_bg">#FAF8FD</color>
+    <color name="error_title">#1A0B2E</color>
+    <color name="error_text">#5C5470</color>
+    <color name="progress">@color/brand_a</color>
+    <color name="splash_bg">#FBFAFF</color>
+    <color name="adaptive_icon_bg">#0B0014</color>
+
+    <!-- Settings sheet surfaces (elevated above window_bg either theme). -->
+    <color name="sheet_bg">#FFFFFF</color>
+    <color name="sheet_stroke">#1F1A0B2E</color>
+    <color name="sheet_handle">#332E1065</color>
+    <color name="swatch_stroke">#332E1065</color>
 </resources>

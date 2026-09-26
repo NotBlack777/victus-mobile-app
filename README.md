@@ -57,10 +57,13 @@ app/
     ├── java/com/victuscloud/ecosystem/
     │   ├── MainActivity.java           # layout/core logic: createLayout, configureWebView,
     │   │                               #   createErrorOverlay, createDownloadListener,
-    │   │                               #   confirmClearSession, showToolsMenu
+    │   │                               #   confirmClearSession, showToolsMenu, applyDynamicAccent
     │   ├── VictusWebViewClient.java    # routing, error/SSL handling (modern callbacks only)
     │   ├── VictusChromeClient.java     # progress, uploads, runtime permissions
-    │   └── DownloadTask.java           # background downloads via MediaStore (scoped storage)
+    │   ├── DownloadTask.java           # background downloads via MediaStore (scoped storage)
+    │   ├── ThemeManager.java           # SharedPreferences-backed theme store (presets + custom)
+    │   └── SettingsSheet.java          # Tools ⋮ → Settings: theme presets, custom color/gradient
+    │                                   #   picker, reduce-motion toggle — plain views, no extra libs
     ├── assets/
     │   ├── home.html                   # home screen (relative units, dark+light themes)
     │   └── victus-logo.png             # original logo recovered from the legacy APK

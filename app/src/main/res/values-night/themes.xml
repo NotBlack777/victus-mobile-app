@@ -5,12 +5,22 @@
         <item name="android:windowBackground">@color/window_bg</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:colorAccent">@color/brand_blue</item>
+        <item name="android:colorAccent">@color/brand_a</item>
     </style>
 
     <style name="Theme.Victus.Splash" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/splash_bg</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
         <item name="postSplashScreenTheme">@style/Theme.Victus</item>
+    </style>
+
+    <style name="SettingsSheetAnimation" parent="android:Animation">
+        <item name="android:windowEnterAnimation">@anim/sheet_slide_up</item>
+        <item name="android:windowExitAnimation">@anim/sheet_slide_down</item>
+    </style>
+
+    <style name="Theme.Victus.Dialog" parent="android:Theme.Material.Dialog.NoActionBar">
+        <item name="android:colorAccent">@color/brand_a</item>
+        <item name="android:windowIsFloating">true</item>
     </style>
 </resources>
