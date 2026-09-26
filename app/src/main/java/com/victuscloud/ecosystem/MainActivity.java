@@ -415,16 +415,17 @@ public class MainActivity extends ComponentActivity {
         if (index < 0 || index >= DOCK_URLS.length) index = TAB_HOME;
         selectedDock = index;
         for (int i = 0; i < dockChips.length; i++) {
+            final TextView chip = dockChips[i];
             boolean selected = i == index;
             // Always settle any in-flight pulse so chips can't get stuck scaled.
-            dockChips[i].animate().cancel();
-            dockChips[i].setScaleX(1f);
-            dockChips[i].setScaleY(1f);
-            styleChip(dockChips[i], selected);
+            chip.animate().cancel();
+            chip.setScaleX(1f);
+            chip.setScaleY(1f);
+            styleChip(chip, selected);
             if (selected && animate) {
                 // Animator-driven pulse — choreographed, not a fixed-frame hack.
-                dockChips[i].animate().scaleX(1.07f).scaleY(1.07f).setDuration(110)
-                        .withEndAction(() -> dockChips[index].animate()
+                chip.animate().scaleX(1.07f).scaleY(1.07f).setDuration(110)
+                        .withEndAction(() -> chip.animate()
                                 .scaleX(1f).scaleY(1f).setDuration(130).start())
                         .start();
             }
