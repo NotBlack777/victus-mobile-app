@@ -29,11 +29,4 @@
         <item name="android:colorAccent">@color/brand_a</item>
         <item name="android:windowIsFloating">true</item>
     </style>
-
-    <style name="Theme.Victus.Dialog.Sheet">
-        <item name="android:windowBackground">@android:color/transparent</item>
-        <item name="android:backgroundDimEnabled">true</item>
-        <item name="android:backgroundDimAmount">0.45</item>
-        <item name="android:windowAnimationStyle">@style/SettingsSheetAnimation</item>
-    </style>
 </resources>

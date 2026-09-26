@@ -105,6 +105,7 @@ public class MainActivity extends ComponentActivity {
     private TextView errorMessage;
     private TextView errorGlyph;
     private TextView errorRetryButton;
+    private TextView errorWebViewUpdateLink;
 
     private WebViewAssetLoader assetLoader;
     private int selectedDock = TAB_HOME;
@@ -733,6 +734,22 @@ public class MainActivity extends ComponentActivity {
         });
         box.addView(home, homeParams);
 
+        errorWebViewUpdateLink = new TextView(this);
+        errorWebViewUpdateLink.setText(R.string.action_update_webview);
+        errorWebViewUpdateLink.setTextSize(13); // SP
+        errorWebViewUpdateLink.setTypeface(errorWebViewUpdateLink.getTypeface(), android.graphics.Typeface.BOLD);
+        errorWebViewUpdateLink.setTextColor(ThemeManager.solid(this));
+        errorWebViewUpdateLink.setGravity(Gravity.CENTER);
+        errorWebViewUpdateLink.setMinHeight(dp(40));
+        errorWebViewUpdateLink.setPaintFlags(errorWebViewUpdateLink.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG);
+        errorWebViewUpdateLink.setForeground(ContextCompat.getDrawable(this, resolveAttr(android.R.attr.selectableItemBackground)));
+        errorWebViewUpdateLink.setVisibility(View.GONE);
+        errorWebViewUpdateLink.setOnClickListener(v -> openWebViewUpdatePage());
+        LinearLayout.LayoutParams updateLinkParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        updateLinkParams.topMargin = dp(8);
+        box.addView(errorWebViewUpdateLink, updateLinkParams);
+
         rootView.addView(errorOverlay, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         errorOverlay.setElevation(dp(6));
@@ -789,6 +806,9 @@ public class MainActivity extends ComponentActivity {
         if (errorRetryButton != null) {
             errorRetryButton.setBackground(buildAccentDrawable(dp(16)));
         }
+        if (errorWebViewUpdateLink != null) {
+            errorWebViewUpdateLink.setTextColor(ThemeManager.solid(this));
+        }
         injectThemeIntoWebView();
     }
 
@@ -827,14 +847,50 @@ public class MainActivity extends ComponentActivity {
     }
 
     void showError(String message, String failingUrl) {
+        errorWebViewUpdateLink.setVisibility(View.GONE);
+        displayErrorOverlay(message + "\n" + getString(R.string.error_offline_hint), failingUrl);
+    }
+
+    /**
+     * TLS-specific error screen. Unlike {@link #showError}, the message is
+     * already a complete, specific explanation (built per {@link android.net.http.SslError}
+     * code in {@link VictusWebViewClient}), so the generic "check your
+     * connection" hint is skipped. When {@code offerWebViewUpdate} is true —
+     * currently for SSL_UNTRUSTED/SSL_NOTYETVALID, the two codes most often
+     * caused by a stale Android System WebView or a wrong device clock rather
+     * than a real attack — an "Update WebView" shortcut to the Play Store is
+     * shown underneath the buttons.
+     */
+    void showSslError(String message, String failingUrl, boolean offerWebViewUpdate) {
+        errorWebViewUpdateLink.setVisibility(offerWebViewUpdate ? View.VISIBLE : View.GONE);
+        displayErrorOverlay(message, failingUrl);
+    }
+
+    private void displayErrorOverlay(String fullMessage, String failingUrl) {
         lastErrorUrl = failingUrl;
-        errorMessage.setText(message + "\n" + getString(R.string.error_offline_hint));
+        errorMessage.setText(fullMessage);
         pageProgress.setVisibility(View.GONE);
         if (errorOverlay.getVisibility() != View.VISIBLE) {
             boolean reduceMotion = ThemeManager.isReduceMotion(this);
             errorOverlay.setAlpha(0f);
             errorOverlay.setVisibility(View.VISIBLE);
             errorOverlay.animate().alpha(1f).setDuration(reduceMotion ? 0 : 240).start();
+        }
+    }
+
+    /** Opens the Play Store listing for Android System WebView, falling back to
+     *  the web listing if the Play Store app itself isn't installed. */
+    private void openWebViewUpdatePage() {
+        String pkg = "com.google.android.webview";
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + pkg)));
+        } catch (Exception e) {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW,
+                        Uri.parse("https://play.google.com/store/apps/details?id=" + pkg)));
+            } catch (Exception ignored) {
+                toast(getString(R.string.no_app_to_handle));
+            }
         }
     }
 

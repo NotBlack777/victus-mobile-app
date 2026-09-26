@@ -139,12 +139,46 @@ final class VictusWebViewClient extends WebViewClient {
 
     /**
      * Secure-by-default TLS policy: an invalid certificate always blocks the
-     * page — the old "proceed anyway" pattern must never come back.
+     * page — the old "proceed anyway" pattern must never come back. Silently
+     * calling {@code handler.proceed()} would "fix" the error screen but turn
+     * off certificate validation entirely, which is a real security hole (and
+     * a Play Store policy violation) — not something to do just to make an
+     * error message go away.
+     *
+     * <p>What we <em>can</em> safely do is make the message and next step
+     * actually useful: most SSL_UNTRUSTED / SSL_NOTYETVALID reports in the
+     * wild trace back to the device's system clock being wrong or an outdated
+     * Android System WebView component rather than a real attack, so those two
+     * codes get a specific hint and an "Update WebView" shortcut.</p>
      */
     @Override
     public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
         handler.cancel();
-        activity.showError(activity.getString(R.string.error_ssl, error.getPrimaryError()),
-                view.getUrl());
+        int code = error.getPrimaryError();
+        String message;
+        boolean offerWebViewUpdate;
+        switch (code) {
+            case SslError.SSL_UNTRUSTED:
+                message = activity.getString(R.string.error_ssl_untrusted);
+                offerWebViewUpdate = true;
+                break;
+            case SslError.SSL_NOTYETVALID:
+                message = activity.getString(R.string.error_ssl_notyetvalid);
+                offerWebViewUpdate = true;
+                break;
+            case SslError.SSL_EXPIRED:
+                message = activity.getString(R.string.error_ssl_expired);
+                offerWebViewUpdate = false;
+                break;
+            case SslError.SSL_IDMISMATCH:
+                message = activity.getString(R.string.error_ssl_mismatch);
+                offerWebViewUpdate = false;
+                break;
+            default:
+                message = activity.getString(R.string.error_ssl_generic, code);
+                offerWebViewUpdate = false;
+                break;
+        }
+        activity.showSslError(message, view.getUrl(), offerWebViewUpdate);
     }
 }
