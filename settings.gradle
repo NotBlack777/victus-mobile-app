@@ -1,0 +1,16 @@
+// Victus Cloud — reconstructed Gradle project (no source tree survived, only the APK).
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = 'VictusCloud'
+include ':app'

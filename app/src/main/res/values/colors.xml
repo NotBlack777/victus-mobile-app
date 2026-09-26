@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand identity (shared between light and dark) -->
+    <color name="brand_blue">#2F81FF</color>
+    <color name="brand_violet">#6D5DFC</color>
+    <color name="brand_teal">#13C8A6</color>
+
+    <!-- Chrome colors — these are the LIGHT values; values-night/colors.xml
+         overrides every one of them so the native chrome follows the system theme
+         instead of being hardcoded dark. -->
+    <color name="window_bg">#F2F6FC</color>
+    <color name="surface_topbar">#E6F7FAFF</color>
+    <color name="divider">#140A1E32</color>
+    <color name="chip_bg">#B3FFFFFF</color>
+    <color name="chip_stroke">#2E0B3A66</color>
+    <color name="chip_text">#13233F</color>
+    <color name="chip_text_selected">#FFFFFF</color>
+    <color name="icon_tint">#24466E</color>
+    <color name="title_text">#0B1830</color>
+    <color name="overlay_bg">#FAFBFE</color>
+    <color name="error_title">#0B1830</color>
+    <color name="error_text">#5A6B85</color>
+    <color name="progress">@color/brand_blue</color>
+    <color name="splash_bg">#FFFFFF</color>
+    <color name="adaptive_icon_bg">#0B1226</color>
+</resources>

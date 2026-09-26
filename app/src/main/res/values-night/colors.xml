@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark overrides — the app's classic identity. -->
+    <color name="window_bg">#050814</color>
+    <color name="surface_topbar">#D90B1426</color>
+    <color name="divider">#1F5AC8F0</color>
+    <color name="chip_bg">#26FFFFFF</color>
+    <color name="chip_stroke">#332F81FF</color>
+    <color name="chip_text">#DCE6F5</color>
+    <color name="chip_text_selected">#FFFFFF</color>
+    <color name="icon_tint">#CFE0FF</color>
+    <color name="title_text">#FFFFFF</color>
+    <color name="overlay_bg">#F2050814</color>
+    <color name="error_title">#FFFFFF</color>
+    <color name="error_text">#93A3C0</color>
+    <color name="splash_bg">#050814</color>
+</resources>
