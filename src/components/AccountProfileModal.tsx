@@ -151,7 +151,7 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({
               </div>
               <div className="flex items-center gap-1.5 text-emerald-400 font-medium text-[10px] mt-1">
                 <CheckCircle2 className="w-3 h-3 text-emerald-400 flex-shrink-0" />
-                <span>Authenticated Session</span>
+                <span>Authenticated (Demo Admin Session)</span>
               </div>
             </div>
           </div>

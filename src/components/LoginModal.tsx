@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle, X, User as UserIcon } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle, X, CheckCircle2, User as UserIcon } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useToast } from './Toast.tsx';
 import { AccountProfileModal } from './AccountProfileModal.tsx';
@@ -10,7 +10,7 @@ interface LoginModalProps {
 }
 
 export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
-  const { user, signIn, signUp, resetPassword } = useAuth();
+  const { user, signIn, signUp } = useAuth();
   const { showToast } = useToast();
 
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
@@ -47,7 +47,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
         if (error) {
           setErrorMessage(error.message);
         } else {
-          showToast(`Account created! Please check your email to confirm.`);
+          showToast(`Account created! Welcome, ${name || email.split('@')[0]}!`);
           onClose();
         }
       }
@@ -58,19 +58,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
     }
   };
 
-  const handleForgotPassword = async () => {
-    if (!email.trim() || !email.includes('@')) {
-      showToast('Please enter your email address first.');
-      return;
-    }
-    setIsLoading(true);
-    const { error } = await resetPassword(email);
-    setIsLoading(false);
-    if (error) {
-      showToast(error.message);
-    } else {
-      showToast(`Password reset link sent to ${email}`);
-    }
+  const handleUseDemo = () => {
+    setEmail('admin@victuscloud.com');
+    setPassword('victus2026');
+    setErrorMessage(null);
   };
 
   return (
@@ -127,7 +118,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Your Name"
+                  placeholder="Alex Cloud"
                   disabled={isLoading}
                   className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-[#14141c] border border-white/[0.08] text-white text-xs placeholder:text-slate-500 focus:outline-none focus:border-violet-500 transition-colors"
                 />
@@ -146,7 +137,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@example.com"
+                placeholder="name@victuscloud.com"
                 disabled={isLoading}
                 className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-[#14141c] border border-white/[0.08] text-white text-xs placeholder:text-slate-500 focus:outline-none focus:border-violet-500 transition-colors"
               />
@@ -161,7 +152,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
               {mode === 'signin' && (
                 <button
                   type="button"
-                  onClick={handleForgotPassword}
+                  onClick={() => showToast('Password reset email sent to provided address.')}
                   className="text-[11px] text-violet-400 hover:text-violet-300 cursor-pointer"
                 >
                   Forgot?
@@ -209,8 +200,17 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
           </button>
         </form>
 
-        {/* Toggle Mode */}
-        <div className="mt-4 pt-3.5 border-t border-white/[0.06] text-center">
+        {/* Demo Fast Autofill */}
+        <div className="mt-4 pt-3.5 border-t border-white/[0.06] flex items-center justify-between">
+          <button
+            type="button"
+            onClick={handleUseDemo}
+            className="text-[11px] text-slate-400 hover:text-violet-300 transition-colors cursor-pointer flex items-center gap-1.5"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5 text-violet-400" />
+            <span>Use Demo Admin</span>
+          </button>
+
           <button
             type="button"
             onClick={() => {

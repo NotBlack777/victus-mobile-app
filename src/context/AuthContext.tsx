@@ -8,7 +8,6 @@ interface AuthContextType {
   signIn: (email: string, pass: string) => Promise<{ error: AuthError | null }>;
   signUp: (email: string, pass: string, name?: string) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
-  resetPassword: (email: string) => Promise<{ error: AuthError | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -16,34 +15,19 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Synchronous initialization: reads stored session on immediate mount (no timing gap/race condition)
   const [session, setSession] = useState<Session | null>(() => authService.getStoredSession());
-  const [isLoading, setIsLoading] = useState(!authService.getStoredSession());
+  const [isLoading, setIsLoading] = useState(false);
 
   // Single source of truth: user is strictly derived from session so they are NEVER desynced
   const user: User | null = session?.user ?? null;
 
   useEffect(() => {
-    let isMounted = true;
-
-    // Check live session on mount
-    authService.getSession().then(({ session: liveSession }) => {
-      if (isMounted) {
-        if (liveSession) {
-          setSession(liveSession);
-        }
-        setIsLoading(false);
-      }
-    });
-
     // Subscribe to auth state transitions
     const { unsubscribe } = authService.onAuthStateChange((_event, currentSession) => {
-      if (isMounted) {
-        setSession(currentSession);
-        setIsLoading(false);
-      }
+      setSession(currentSession);
+      setIsLoading(false);
     });
 
     return () => {
-      isMounted = false;
       unsubscribe();
     };
   }, []);
@@ -69,10 +53,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSession(null);
   };
 
-  const resetPassword = async (email: string) => {
-    return await authService.resetPassword(email);
-  };
-
   return (
     <AuthContext.Provider
       value={{
@@ -82,7 +62,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signIn,
         signUp,
         signOut,
-        resetPassword,
       }}
     >
       {children}
