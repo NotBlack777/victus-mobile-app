@@ -18,7 +18,7 @@ interface DockBarProps {
 }
 
 export const DockBar: React.FC<DockBarProps> = ({ activeTabId, onSelectTab }) => {
-  const { gradientColors, config } = useTheme();
+  const { config, isDark } = useTheme();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const chipsRef = useRef<Record<string, HTMLButtonElement | null>>({});
 
@@ -34,12 +34,9 @@ export const DockBar: React.FC<DockBarProps> = ({ activeTabId, onSelectTab }) =>
     }
   }, [activeTabId, config.reduceMotion]);
 
-  const [c1, c2, c3] = gradientColors;
-  const activeGradient = `linear-gradient(135deg, ${c1}, ${c2}, ${c3})`;
-
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 w-full border-t backdrop-blur-md select-none transition-colors"
+      className="fixed bottom-0 left-0 right-0 z-40 w-full border-t backdrop-blur-md select-none transition-colors duration-200"
       style={{
         backgroundColor: 'var(--surface-topbar)',
         borderColor: 'var(--divider)',
@@ -49,25 +46,31 @@ export const DockBar: React.FC<DockBarProps> = ({ activeTabId, onSelectTab }) =>
     >
       <div
         ref={scrollerRef}
-        className="w-full flex items-center overflow-x-auto no-scrollbar py-2.5 px-3 sm:px-4 gap-2 scroll-smooth"
+        className="w-full flex items-center overflow-x-auto no-scrollbar py-2 px-3 sm:px-4 gap-2 scroll-smooth"
       >
         {DOCK_TABS.map((tab) => {
           const isSelected = tab.id === activeTabId;
           return (
             <button
               key={tab.id}
-              ref={(el) => { chipsRef.current[tab.id] = el; }}
+              ref={(el) => {
+                chipsRef.current[tab.id] = el;
+              }}
               onClick={() => onSelectTab(tab)}
-              className={`min-h-[48px] px-5 rounded-full text-sm font-bold whitespace-nowrap cursor-pointer flex items-center justify-center transition-all flex-shrink-0 ${
+              className={`min-h-[38px] px-3.5 sm:px-4 rounded-xl text-xs font-semibold whitespace-nowrap cursor-pointer flex items-center justify-center transition-all flex-shrink-0 active:scale-95 ${
                 isSelected
-                  ? 'text-white shadow-lg active:scale-95'
-                  : 'hover:brightness-105 active:scale-95'
+                  ? 'bg-violet-600/20 text-violet-400 border border-violet-500/40 shadow-[0_0_12px_rgba(139,92,246,0.25)]'
+                  : 'hover:text-violet-400'
               }`}
               style={{
-                background: isSelected ? activeGradient : 'var(--chip-bg)',
-                border: isSelected ? 'none' : '1px solid var(--chip-stroke)',
-                color: isSelected ? '#ffffff' : 'var(--chip-text)',
-                boxShadow: isSelected ? 'var(--shadow-primary)' : 'none',
+                backgroundColor: isSelected
+                  ? undefined
+                  : isDark
+                  ? 'rgba(255, 255, 255, 0.04)'
+                  : 'rgba(0, 0, 0, 0.04)',
+                borderColor: isSelected ? undefined : 'var(--line)',
+                color: isSelected ? undefined : 'var(--muted)',
+                borderWidth: '1px',
               }}
             >
               {tab.label}

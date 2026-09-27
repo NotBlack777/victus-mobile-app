@@ -1,552 +1,381 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ExternalLink,
-  Copy,
   Lock,
-  Server,
-  Play,
-  Square,
-  RotateCcw,
-  HardDrive,
-  Upload,
-  Download,
-  Terminal,
   CreditCard,
   LifeBuoy,
   Activity,
   CheckCircle2,
+  Cpu,
+  ShieldCheck,
+  Globe2,
+  Zap,
+  HardDrive,
+  Upload,
+  Download,
   FileText,
-  AlertTriangle,
-  Send,
-  Eye,
+  RotateCw,
 } from 'lucide-react';
 import { useToast } from './Toast.tsx';
+import { useTheme } from '../context/ThemeContext.tsx';
+import { ControlDashboard } from './ControlDashboard.tsx';
+import { ServiceControlScreen } from './ServiceControlScreen.tsx';
+import { VictusService } from '../services/controlData.ts';
+import { openVictusLink } from '../utils/navigation.ts';
 
 interface EcosystemFrameProps {
   url: string;
   title: string;
   onNavigateHome: () => void;
   onTriggerError: (message: string, failingUrl: string) => void;
+  onNavigate?: (url: string, title?: string, tabId?: string) => void;
 }
 
 export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
   url,
   title,
   onNavigateHome: _onNavigateHome,
-  onTriggerError,
+  onTriggerError: _onTriggerError,
+  onNavigate,
 }) => {
   const { showToast } = useToast();
-  const [viewMode, setViewMode] = useState<'app' | 'iframe'>('app');
-  const [iframeError, setIframeError] = useState(false);
-  const [serverPower, setServerPower] = useState<'running' | 'stopping' | 'stopped'>('running');
-  const [consoleInput, setConsoleInput] = useState('');
-  const [consoleLogs, setConsoleLogs] = useState<string[]>([
-    '[Victus Daemon] Node victus-us-node01 connected via TLS 1.3',
-    '[Container] Container victus-srv-1849 initialized with 4096MB RAM',
-    '[Pterodactyl/Wings] Server marked as RUNNING on port 25565',
-    '[Metrics] CPU: 14.8% | RAM: 1.42 GB / 4.00 GB | Disk: 4.8 GB',
-  ]);
-  const [driveFiles, setDriveFiles] = useState([
-    { name: 'server_backup_2026.tar.gz', size: '242 MB', modified: '2 hours ago', type: 'archive' },
-    { name: 'world_data.zip', size: '89 MB', modified: 'Yesterday', type: 'archive' },
-    { name: 'server.properties', size: '4.2 KB', modified: '3 days ago', type: 'config' },
-    { name: 'victus-cloud-manual.pdf', size: '1.2 MB', modified: 'Last week', type: 'doc' },
-  ]);
-  const [supportTickets] = useState([
-    { id: '#VT-9821', subject: 'Node migration request', status: 'In Review', dept: 'Infrastructure' },
-    { id: '#VT-9804', subject: 'Billing invoice query', status: 'Answered', dept: 'Billing' },
-  ]);
+  const { config } = useTheme();
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    // Reset iframe error when URL changes
-    setIframeError(false);
-  }, [url]);
-
-  const copyUrl = () => {
-    navigator.clipboard.writeText(url);
-    showToast('Link copied to clipboard');
-  };
-
-  const openExternal = () => {
-    window.open(url, '_blank', 'noopener,noreferrer');
-  };
-
-  const handleConsoleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!consoleInput.trim()) return;
-    const cmd = consoleInput.trim();
-    setConsoleLogs((prev) => [...prev, `> ${cmd}`, `[Server] Executed: ${cmd} (status 0)`]);
-    setConsoleInput('');
-  };
-
-  const handlePower = (action: 'start' | 'restart' | 'stop') => {
-    if (action === 'start') {
-      setServerPower('running');
-      setConsoleLogs((prev) => [...prev, '[Daemon] Starting container...', '[Pterodactyl] Server status: RUNNING']);
-      showToast('Server started');
-    } else if (action === 'restart') {
-      setServerPower('running');
-      setConsoleLogs((prev) => [...prev, '[Daemon] Restarting container...', '[Pterodactyl] Server restarted successfully']);
-      showToast('Server restarted');
-    } else {
-      setServerPower('stopped');
-      setConsoleLogs((prev) => [...prev, '[Daemon] Stopping container gracefully...', '[Pterodactyl] Server status: STOPPED']);
-      showToast('Server stopped');
-    }
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      const sizeStr = file.size > 1024 * 1024 ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`;
-      setDriveFiles((prev) => [
-        { name: file.name, size: sizeStr, modified: 'Just now', type: 'file' },
-        ...prev,
-      ]);
-      showToast(`Uploaded ${file.name} to Victus Drive`);
-    }
-  };
-
-  const handleFileDownload = (fileName: string) => {
-    showToast(`Downloading ${fileName}…`);
-    setTimeout(() => {
-      showToast(`Saved ${fileName} to Downloads/VictusCloud`);
-    }, 1200);
-  };
-
-  // Determine current ecosystem panel type
-  const isControl = url.includes('control.victuscloud.com');
+  const isControl =
+    url.includes('control.victuscloud.com') ||
+    title.toLowerCase().includes('control') ||
+    title.toLowerCase().includes('server');
   const isBilling = url.includes('billing.victuscloud.com');
   const isDrive = url.includes('drive.victuscloud.com');
   const isSupport = url.includes('/support');
   const isStatus = url.includes('/status');
-  const isMarketplace = url.includes('/marketplace');
+
+  // Direct live web viewer or native panel view
+  const [viewMode, setViewMode] = useState<'iframe' | 'app'>(isControl ? 'app' : 'iframe');
+  const [iframeError, setIframeError] = useState(false);
+  const [iframeKey, setIframeKey] = useState(0);
+  const [isIframeLoading, setIsIframeLoading] = useState(true);
+
+  // Selected service for the per-server control screen
+  const [selectedService, setSelectedService] = useState<VictusService | null>(null);
+
+  // Real data structures reflecting Victus Cloud properties
+  const [driveFiles] = useState([
+    { name: 'victus-backup-survival-2026.tar.gz', size: '4.8 GB', modified: '2 hours ago', type: 'archive' },
+    { name: 'paper-world-nether.zip', size: '1.4 GB', modified: 'Yesterday', type: 'archive' },
+    { name: 'server.properties', size: '4.2 KB', modified: '3 days ago', type: 'config' },
+    { name: 'velocity.toml', size: '18.6 KB', modified: '4 days ago', type: 'config' },
+    { name: 'cosmic-guard-firewall-rules.json', size: '3.1 KB', modified: 'Last week', type: 'config' },
+  ]);
+
+  const [supportTickets] = useState([
+    { id: '#VT-9821', subject: 'Node migration request to Singapore SG-1 (Ryzen 9 7950X)', status: 'In Review', dept: 'Infrastructure' },
+    { id: '#VT-9804', subject: 'Billing invoice query for KVM VPS Instance', status: 'Answered', dept: 'Billing' },
+    { id: '#VT-9772', subject: 'Custom domain DNS and SRV record verification for survival.victusmc.net', status: 'Resolved', dept: 'Networking' },
+  ]);
+
+  useEffect(() => {
+    setIframeError(false);
+    setIsIframeLoading(true);
+    if (isControl) {
+      setViewMode('app');
+    } else {
+      setViewMode('iframe');
+    }
+  }, [url, isControl]);
+
+  const handleOpenExternal = () => {
+    openVictusLink(url, {
+      openLinksExternally: config.openLinksExternally,
+      onNavigateInApp: onNavigate,
+      showToast,
+      title,
+    });
+  };
+
+  const reloadIframe = () => {
+    setIsIframeLoading(true);
+    setIframeKey((prev) => prev + 1);
+    setIframeError(false);
+    showToast('Reloading page…');
+  };
+
+  const iframeSrc = `/api/proxy?url=${encodeURIComponent(url)}`;
 
   return (
-    <div className="w-full max-w-[61.25rem] mx-auto px-3 sm:px-6 pt-3 pb-24 animate-in fade-in duration-200">
-      {/* Mini Browser Bar */}
+    <div className="flex-1 w-full flex flex-col relative select-none bg-[var(--bg)] text-[var(--text)]">
+      {/* View Switcher Top Bar for Web/Native Panels */}
       <div
-        className="w-full rounded-2xl p-2.5 sm:p-3 mb-4 border flex items-center justify-between gap-2 text-xs backdrop-blur-md"
+        className="w-full flex items-center justify-between px-3 sm:px-6 py-2 border-b text-xs transition-colors backdrop-blur-md"
         style={{
           backgroundColor: 'var(--panel)',
-          borderColor: 'var(--line-soft)',
+          borderColor: 'var(--divider)',
         }}
       >
-        <div className="flex items-center gap-2 flex-1 min-w-0 px-2 py-1.5 rounded-lg bg-black/20 border border-white/5">
-          <Lock className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-          <span className="truncate font-mono text-[11px] opacity-90 select-all">{url}</span>
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-violet-400" />
+          <span className="font-bold text-[11px] uppercase tracking-wider text-violet-400">
+            {isControl ? 'Victus Control Panel' : title}
+          </span>
         </div>
 
-        <div className="flex items-center gap-1 flex-shrink-0">
+        <div className="flex items-center gap-1.5">
+          {viewMode === 'iframe' && (
+            <button
+              onClick={reloadIframe}
+              title="Reload Frame"
+              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button
-            onClick={() => setViewMode(viewMode === 'app' ? 'iframe' : 'app')}
-            title={viewMode === 'app' ? 'Switch to live iframe loader' : 'Switch to native panel view'}
-            className="px-2.5 py-1.5 rounded-lg font-semibold flex items-center gap-1 border transition-all text-[11px] cursor-pointer hover:bg-white/10"
-            style={{ borderColor: 'var(--line-soft)' }}
+            onClick={() => setViewMode(viewMode === 'iframe' ? 'app' : 'iframe')}
+            className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] text-slate-300 hover:text-white transition-colors cursor-pointer"
           >
-            <Eye className="w-3 h-3" />
-            <span className="hidden sm:inline">{viewMode === 'app' ? 'Live Web' : 'Panel View'}</span>
+            {viewMode === 'iframe' ? 'Switch to App View' : 'Switch to Web View'}
           </button>
-
           <button
-            onClick={copyUrl}
-            title="Copy URL"
-            className="p-1.5 rounded-lg hover:bg-white/10 transition-all cursor-pointer"
+            onClick={handleOpenExternal}
+            title={config.openLinksExternally ? 'Open in External Browser' : 'Open in Browser (Toggle in Settings)'}
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
           >
-            <Copy className="w-3.5 h-3.5 opacity-80" />
-          </button>
-
-          <button
-            onClick={openExternal}
-            title="Open in new window"
-            className="p-1.5 rounded-lg hover:bg-white/10 transition-all cursor-pointer"
-          >
-            <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+            <ExternalLink className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {/* Mode: Live iframe view */}
+      {/* Primary View: Live Web iframe */}
       {viewMode === 'iframe' && (
-        <div className="w-full rounded-2xl overflow-hidden border relative min-h-[550px]" style={{ borderColor: 'var(--line-soft)' }}>
-          {iframeError ? (
-            <div className="p-8 text-center flex flex-col items-center justify-center min-h-[400px]">
-              <AlertTriangle className="w-12 h-12 text-amber-400 mb-3" />
-              <h3 className="text-lg font-bold">Browser Cross-Origin Protection</h3>
-              <p className="text-xs max-w-md mt-2 opacity-70">
-                This Victus Cloud server sends an <code>X-Frame-Options: SAMEORIGIN</code> header that prevents embedding inside web iframes. You can open it directly or use our native panel view.
+        <div className="flex-1 w-full relative min-h-[calc(100vh-140px)] flex flex-col">
+          {isIframeLoading && !iframeError && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#0a0a0f]/90 backdrop-blur-xs">
+              <div className="w-8 h-8 rounded-full border-2 border-violet-500 border-t-transparent animate-spin mb-3" />
+              <p className="text-xs text-slate-300 font-medium tracking-wide">
+                Connecting to {new URL(url).hostname}…
               </p>
-              <div className="flex gap-2 mt-5">
-                <button
-                  onClick={openExternal}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-white cursor-pointer"
-                  style={{ background: 'linear-gradient(135deg, var(--accent-1), var(--accent-2))' }}
-                >
-                  Open in New Tab
-                </button>
+            </div>
+          )}
+
+          {iframeError ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mb-3">
+                <Lock className="w-6 h-6" />
+              </div>
+              <h3 className="font-bold text-base text-white">Browser Security Protected</h3>
+              <p className="text-xs text-slate-400 max-w-sm mt-1 mb-4 leading-relaxed">
+                This endpoint requires direct browser security credentials. Use App Mode for native management or open directly in your browser.
+              </p>
+              <div className="flex gap-2">
                 <button
                   onClick={() => setViewMode('app')}
-                  className="px-4 py-2 rounded-xl text-xs font-bold border cursor-pointer"
-                  style={{ borderColor: 'var(--line-soft)' }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-violet-600 hover:bg-violet-500 cursor-pointer"
                 >
-                  Switch to Panel View
+                  Open App Tools
+                </button>
+                <button
+                  onClick={handleOpenExternal}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-300 bg-white/[0.04] border border-white/[0.08] hover:text-white cursor-pointer"
+                >
+                  Open Browser
                 </button>
               </div>
             </div>
           ) : (
             <iframe
-              src={url}
+              key={iframeKey}
+              src={iframeSrc}
               title={title}
-              className="w-full h-[650px] border-none bg-white"
+              className="w-full flex-1 border-none m-0 p-0 block bg-[#0a0a0f] min-h-[calc(100vh-140px)]"
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+              onLoad={() => setIsIframeLoading(false)}
               onError={() => {
+                setIsIframeLoading(false);
                 setIframeError(true);
-                onTriggerError('Failed to load embedded frame', url);
               }}
             />
           )}
         </div>
       )}
 
-      {/* Mode: Native Panel View */}
+      {/* Alternative View: Native App Experience */}
       {viewMode === 'app' && (
-        <div className="space-y-4">
-          {/* Header banner */}
-          <div
-            className="p-4 sm:p-5 rounded-2xl border backdrop-blur-md flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-            style={{
-              background: 'linear-gradient(145deg, var(--panel-strong), var(--panel))',
-              borderColor: 'var(--line)',
-            }}
-          >
-            <div>
-              <span
-                className="text-[10px] font-extrabold uppercase tracking-widest px-2.5 py-0.5 rounded-full border inline-block mb-1.5"
-                style={{
-                  borderColor: 'var(--line)',
-                  backgroundColor: 'rgba(var(--accent-1-rgb), 0.1)',
-                  color: 'var(--accent-1)',
-                }}
-              >
-                Victus Ecosystem
-              </span>
-              <h2 className="text-xl sm:text-2xl font-black">{title}</h2>
-              <p className="text-xs opacity-70 mt-0.5">
-                Connected to secure Victus Cloud network node (US-East Cluster)
-              </p>
-            </div>
+        <div className="flex-1 w-full overflow-y-auto">
+          {/* ======================================================== */}
+          {/* CONTROL TAB (Dashboard / Fleet Overview or Service Detail) */}
+          {/* ======================================================== */}
+          {isControl ? (
+            selectedService ? (
+              <ServiceControlScreen
+                service={selectedService}
+                onBack={() => setSelectedService(null)}
+              />
+            ) : (
+              <ControlDashboard
+                onSelectService={(srv) => setSelectedService(srv)}
+                onNavigateTab={onNavigate}
+              />
+            )
+          ) : isBilling ? (
+            /* ======================================================== */
+            /* BILLING PORTAL (Paymenter Engine) */
+            /* ======================================================== */
+            <div className="w-full max-w-[64rem] mx-auto px-3 sm:px-6 py-4 pb-24 space-y-4">
+              <div className="p-5 rounded-2xl border border-white/[0.08] bg-[#14141c] shadow-sm flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <CreditCard className="w-4 h-4 text-violet-400" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-violet-400">
+                      Paymenter Engine
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-bold text-white">Billing &amp; Cloud Subscriptions</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Manage active nodes, automated renewals, invoices, and cloud wallet balances.
+                  </p>
+                </div>
+                <button
+                  onClick={() =>
+                    openVictusLink('http://billing.victuscloud.com', {
+                      openLinksExternally: config.openLinksExternally,
+                      onNavigateInApp: onNavigate,
+                      showToast,
+                      title: 'Billing Portal',
+                      tabId: 'billing',
+                    })
+                  }
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-violet-600 hover:bg-violet-500 cursor-pointer shadow-sm flex items-center gap-1.5 flex-shrink-0"
+                >
+                  <span>Open Billing Portal</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </button>
+              </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={openExternal}
-                className="min-h-[44px] px-4 rounded-xl text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer shadow-md"
-                style={{ background: 'linear-gradient(135deg, var(--accent-1), var(--accent-2))' }}
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                Open External
-              </button>
-            </div>
-          </div>
-
-          {/* CONTROL PANEL VIEW */}
-          {isControl && (
-            <div className="space-y-4">
-              {/* Server status & power card */}
-              <div
-                className="p-4 sm:p-5 rounded-2xl border backdrop-blur-md"
-                style={{ backgroundColor: 'var(--panel)', borderColor: 'var(--line-soft)' }}
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
-                  <div className="flex items-center gap-3">
+              {/* Invoices List */}
+              <div className="p-4 rounded-xl border border-white/[0.08] bg-[#14141c] shadow-sm">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+                  Recent Invoices
+                </h4>
+                <div className="space-y-2">
+                  {[
+                    { id: '#INV-2026-442', item: 'Ryzen 9 7950X - 16GB RAM Node', amount: '$18.00', status: 'PAID' },
+                    { id: '#INV-2026-419', item: 'Victus Drive S3 Storage (100GB)', amount: '$5.00', status: 'PAID' },
+                    { id: '#INV-2026-388', item: 'KVM VPS 4-Core Cloud Instance', amount: '$24.00', status: 'PAID' },
+                  ].map((inv) => (
                     <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white"
-                      style={{ background: 'linear-gradient(135deg, var(--accent-1), var(--accent-2))' }}
+                      key={inv.id}
+                      className="p-3 rounded-lg bg-black/30 border border-white/[0.04] flex items-center justify-between text-xs"
                     >
-                      <Server className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-base">Victus Game Server #01</h3>
-                      <div className="flex items-center gap-2 text-xs opacity-70">
-                        <span>Node: us-east-01</span>
-                        <span>•</span>
-                        <span className="flex items-center gap-1">
-                          <span
-                            className={`w-2 h-2 rounded-full ${
-                              serverPower === 'running' ? 'bg-emerald-400' : 'bg-red-400'
-                            }`}
-                          />
-                          {serverPower === 'running' ? 'Online' : 'Stopped'}
+                      <div>
+                        <strong className="block text-white font-mono">{inv.id}</strong>
+                        <span className="text-slate-400 text-[11px]">{inv.item}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono font-bold text-white">{inv.amount}</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          {inv.status}
                         </span>
                       </div>
                     </div>
-                  </div>
-
-                  {/* Power Actions */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handlePower('start')}
-                      disabled={serverPower === 'running'}
-                      className="px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 disabled:opacity-40 cursor-pointer"
-                    >
-                      <Play className="w-3.5 h-3.5" /> Start
-                    </button>
-                    <button
-                      onClick={() => handlePower('restart')}
-                      className="px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1 bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 cursor-pointer"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" /> Restart
-                    </button>
-                    <button
-                      onClick={() => handlePower('stop')}
-                      disabled={serverPower === 'stopped'}
-                      className="px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1 bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 disabled:opacity-40 cursor-pointer"
-                    >
-                      <Square className="w-3.5 h-3.5" /> Stop
-                    </button>
-                  </div>
-                </div>
-
-                {/* Resource Metrics */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4">
-                  <div className="p-3 rounded-xl bg-black/20 border border-white/5">
-                    <span className="text-[11px] opacity-60 font-semibold uppercase block">CPU Usage</span>
-                    <strong className="text-lg font-bold">{serverPower === 'running' ? '14.8%' : '0%'}</strong>
-                    <div className="w-full bg-white/10 h-1.5 rounded-full mt-2 overflow-hidden">
-                      <div className="bg-purple-400 h-full rounded-full" style={{ width: serverPower === 'running' ? '15%' : '0%' }} />
-                    </div>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-black/20 border border-white/5">
-                    <span className="text-[11px] opacity-60 font-semibold uppercase block">Memory (RAM)</span>
-                    <strong className="text-lg font-bold">{serverPower === 'running' ? '1.42 GB / 4.00 GB' : '0 MB'}</strong>
-                    <div className="w-full bg-white/10 h-1.5 rounded-full mt-2 overflow-hidden">
-                      <div className="bg-emerald-400 h-full rounded-full" style={{ width: serverPower === 'running' ? '35.5%' : '0%' }} />
-                    </div>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-black/20 border border-white/5">
-                    <span className="text-[11px] opacity-60 font-semibold uppercase block">Disk Space</span>
-                    <strong className="text-lg font-bold">4.8 GB / 25 GB</strong>
-                    <div className="w-full bg-white/10 h-1.5 rounded-full mt-2 overflow-hidden">
-                      <div className="bg-blue-400 h-full rounded-full" style={{ width: '19.2%' }} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Console window */}
-              <div
-                className="p-4 rounded-2xl border backdrop-blur-md bg-black/40"
-                style={{ borderColor: 'var(--line-soft)' }}
-              >
-                <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
-                  <span className="text-xs font-bold flex items-center gap-1.5 opacity-80">
-                    <Terminal className="w-4 h-4 text-purple-400" />
-                    Live Server Console
-                  </span>
-                  <span className="text-[10px] font-mono opacity-50">UTF-8 / TLS 1.3</span>
-                </div>
-
-                <div className="h-44 overflow-y-auto font-mono text-[11px] space-y-1 p-2 bg-black/50 rounded-lg select-text text-emerald-300">
-                  {consoleLogs.map((log, i) => (
-                    <div key={i} className="leading-relaxed">{log}</div>
                   ))}
                 </div>
-
-                <form onSubmit={handleConsoleSubmit} className="mt-2 flex gap-2">
-                  <input
-                    type="text"
-                    value={consoleInput}
-                    onChange={(e) => setConsoleInput(e.target.value)}
-                    placeholder="Type server command (e.g. status, say hello, op)..."
-                    className="flex-1 px-3 py-2 rounded-xl text-xs bg-white/5 border border-white/10 focus:outline-none focus:border-purple-400 font-mono"
-                  />
-                  <button
-                    type="submit"
-                    className="px-3.5 py-2 rounded-xl text-xs font-bold bg-purple-600 hover:bg-purple-500 text-white flex items-center gap-1 cursor-pointer"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                  </button>
-                </form>
               </div>
             </div>
-          )}
-
-          {/* BILLING PANEL VIEW */}
-          {isBilling && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div
-                  className="p-4 rounded-2xl border backdrop-blur-md"
-                  style={{ backgroundColor: 'var(--panel)', borderColor: 'var(--line-soft)' }}
-                >
-                  <span className="text-xs opacity-60 font-semibold">Account Balance</span>
-                  <h3 className="text-2xl font-black mt-1">$45.00</h3>
-                  <button
-                    onClick={() => showToast('Redirecting to payment top-up…')}
-                    className="mt-3 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-purple-600 hover:bg-purple-500 cursor-pointer"
-                  >
-                    Add Credits
-                  </button>
+          ) : isDrive ? (
+            /* ======================================================== */
+            /* DRIVE PORTAL */
+            /* ======================================================== */
+            <div className="w-full max-w-[64rem] mx-auto px-3 sm:px-6 py-4 pb-24 space-y-4">
+              <div className="p-5 rounded-2xl border border-white/[0.08] bg-[#14141c] shadow-sm flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <HardDrive className="w-4 h-4 text-sky-400" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-sky-400">
+                      S3 Cloud Storage
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-bold text-white">Victus Drive Repository</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    High-speed backup snapshots, configuration archives, and asset storage.
+                  </p>
                 </div>
-
-                <div
-                  className="p-4 rounded-2xl border backdrop-blur-md"
-                  style={{ backgroundColor: 'var(--panel)', borderColor: 'var(--line-soft)' }}
+                <button
+                  onClick={() => showToast('Drive storage is fully synchronized')}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-sky-600 hover:bg-sky-500 cursor-pointer shadow-sm flex items-center gap-1.5 flex-shrink-0"
                 >
-                  <span className="text-xs opacity-60 font-semibold">Active Services</span>
-                  <h3 className="text-2xl font-black mt-1">2 Servers</h3>
-                  <span className="text-[11px] text-emerald-400 mt-2 block font-semibold">Renews next month</span>
-                </div>
-
-                <div
-                  className="p-4 rounded-2xl border backdrop-blur-md"
-                  style={{ backgroundColor: 'var(--panel)', borderColor: 'var(--line-soft)' }}
-                >
-                  <span className="text-xs opacity-60 font-semibold">Unpaid Invoices</span>
-                  <h3 className="text-2xl font-black mt-1">$0.00</h3>
-                  <span className="text-[11px] text-emerald-400 mt-2 block font-semibold">Account in good standing</span>
-                </div>
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Upload Archive</span>
+                </button>
               </div>
 
-              {/* Subscriptions */}
-              <div
-                className="p-4 sm:p-5 rounded-2xl border backdrop-blur-md"
-                style={{ backgroundColor: 'var(--panel)', borderColor: 'var(--line-soft)' }}
-              >
-                <h3 className="text-base font-bold mb-3 flex items-center gap-2">
-                  <CreditCard className="w-4 h-4 text-purple-400" />
-                  Your Active Cloud Plans
-                </h3>
-                <div className="space-y-2">
-                  <div className="p-3 rounded-xl bg-black/20 border border-white/5 flex items-center justify-between">
-                    <div>
-                      <strong className="block text-sm">Extreme Ryzen 9 Server (4GB)</strong>
-                      <span className="text-xs opacity-60">Control Panel ID: #SRV-1849</span>
-                    </div>
-                    <span className="text-sm font-bold text-purple-400">$6.50 / mo</span>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-black/20 border border-white/5 flex items-center justify-between">
-                    <div>
-                      <strong className="block text-sm">Victus Cloud Drive 50GB</strong>
-                      <span className="text-xs opacity-60">Storage Bucket US-East</span>
-                    </div>
-                    <span className="text-sm font-bold text-purple-400">$2.00 / mo</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* VICTUS DRIVE VIEW */}
-          {isDrive && (
-            <div className="space-y-4">
-              <div
-                className="p-4 sm:p-5 rounded-2xl border backdrop-blur-md flex items-center justify-between gap-3"
-                style={{ backgroundColor: 'var(--panel)', borderColor: 'var(--line-soft)' }}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white"
-                    style={{ background: 'linear-gradient(135deg, var(--accent-1), var(--accent-2))' }}
-                  >
-                    <HardDrive className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-base">Victus Cloud Drive</h3>
-                    <p className="text-xs opacity-70">1.8 GB used of 50 GB</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    className="hidden"
-                    onChange={handleFileUpload}
-                  />
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer"
-                    style={{ background: 'linear-gradient(135deg, var(--accent-1), var(--accent-2))' }}
-                  >
-                    <Upload className="w-3.5 h-3.5" />
-                    Upload File
-                  </button>
-                </div>
-              </div>
-
-              {/* Files list */}
-              <div
-                className="p-4 rounded-2xl border backdrop-blur-md"
-                style={{ backgroundColor: 'var(--panel)', borderColor: 'var(--line-soft)' }}
-              >
-                <h4 className="text-xs font-bold uppercase tracking-wider opacity-70 mb-3">Storage Files</h4>
+              {/* Files Table */}
+              <div className="p-4 rounded-xl border border-white/[0.08] bg-[#14141c] shadow-sm">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+                  Stored Archives &amp; Configs
+                </h4>
                 <div className="space-y-2">
                   {driveFiles.map((file, i) => (
                     <div
                       key={i}
-                      className="p-3 rounded-xl bg-black/20 border border-white/5 flex items-center justify-between gap-2 hover:bg-black/30 transition-all"
+                      className="p-3 rounded-lg bg-black/30 border border-white/[0.04] flex items-center justify-between text-xs"
                     >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <FileText className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                        <div className="min-w-0">
-                          <p className="text-xs sm:text-sm font-semibold truncate">{file.name}</p>
-                          <span className="text-[11px] opacity-60">
-                            {file.size} • {file.modified}
-                          </span>
+                      <div className="flex items-center gap-2.5">
+                        <FileText className="w-4 h-4 text-violet-400" />
+                        <div>
+                          <strong className="block text-white font-mono text-xs">{file.name}</strong>
+                          <span className="text-[10px] text-slate-400">{file.modified}</span>
                         </div>
                       </div>
-
-                      <button
-                        onClick={() => handleFileDownload(file.name)}
-                        title="Download file"
-                        className="p-2 rounded-lg hover:bg-white/10 transition-all cursor-pointer flex-shrink-0"
-                      >
-                        <Download className="w-4 h-4 text-purple-300" />
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-slate-400 text-xs">{file.size}</span>
+                        <button
+                          onClick={() => showToast(`Downloading ${file.name}…`)}
+                          className="p-1 rounded text-slate-400 hover:text-white"
+                          title="Download"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
             </div>
-          )}
-
-          {/* SUPPORT VIEW */}
-          {isSupport && (
-            <div className="space-y-4">
-              <div
-                className="p-4 sm:p-5 rounded-2xl border backdrop-blur-md"
-                style={{ backgroundColor: 'var(--panel)', borderColor: 'var(--line-soft)' }}
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-base flex items-center gap-2">
-                    <LifeBuoy className="w-4 h-4 text-purple-400" />
-                    Victus Support Hub
-                  </h3>
-                  <button
-                    onClick={() => showToast('Opening new ticket wizard…')}
-                    className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-purple-600 hover:bg-purple-500 cursor-pointer"
-                  >
-                    Open Ticket
-                  </button>
+          ) : isSupport ? (
+            /* ======================================================== */
+            /* SUPPORT HUB */
+            /* ======================================================== */
+            <div className="w-full max-w-[64rem] mx-auto px-3 sm:px-6 py-4 pb-24 space-y-4">
+              <div className="p-5 rounded-2xl border border-white/[0.08] bg-[#14141c] shadow-sm">
+                <div className="flex items-center gap-2 mb-1">
+                  <LifeBuoy className="w-4 h-4 text-emerald-400" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                    24/7 Support Desk
+                  </span>
                 </div>
+                <h3 className="text-xl font-bold text-white">Help Center &amp; Support Tickets</h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Submit tickets, view technical guides, or connect with our engineering team on Discord.
+                </p>
+              </div>
 
+              {/* Tickets List */}
+              <div className="p-4 rounded-xl border border-white/[0.08] bg-[#14141c] shadow-sm">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+                  Your Support Tickets
+                </h4>
                 <div className="space-y-2">
-                  {supportTickets.map((t, i) => (
+                  {supportTickets.map((t) => (
                     <div
-                      key={i}
-                      className="p-3 rounded-xl bg-black/20 border border-white/5 flex items-center justify-between"
+                      key={t.id}
+                      className="p-3 rounded-lg bg-black/30 border border-white/[0.04] flex items-center justify-between text-xs"
                     >
                       <div>
-                        <span className="text-[11px] font-mono text-purple-300">{t.id}</span>
-                        <strong className="block text-sm">{t.subject}</strong>
-                        <span className="text-[11px] opacity-60">{t.dept}</span>
+                        <strong className="block text-white font-mono">{t.id}</strong>
+                        <span className="text-slate-300 text-xs">{t.subject}</span>
+                        <span className="block text-[10px] text-slate-500 mt-0.5">{t.dept}</span>
                       </div>
-                      <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-600/20 text-violet-300 border border-violet-500/30">
                         {t.status}
                       </span>
                     </div>
@@ -554,85 +383,103 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
                 </div>
               </div>
 
-              {/* Discord Lounge banner */}
-              <div
-                className="p-4 rounded-2xl border backdrop-blur-md flex items-center justify-between"
-                style={{ backgroundColor: 'rgba(88, 101, 242, 0.15)', borderColor: 'rgba(88, 101, 242, 0.3)' }}
-              >
+              {/* Discord Banner with Real Invite Link */}
+              <div className="p-4 rounded-xl border border-white/[0.08] bg-[#14141c] shadow-sm flex items-center justify-between gap-3">
                 <div>
-                  <h4 className="text-sm font-bold">Join the Victus Discord Lounge</h4>
-                  <p className="text-xs opacity-80 mt-0.5">Chat with 5,000+ cloud admins, devs, and 24/7 support.</p>
+                  <h4 className="text-xs font-bold text-white">Victus Discord Community</h4>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Connect with 5,000+ server owners, devs, and 24/7 staff at discord.gg/victuscloud
+                  </p>
                 </div>
                 <button
-                  onClick={() => window.open('https://discord.gg/victus', '_blank')}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-[#5865F2] hover:bg-[#4752C4] text-white cursor-pointer"
+                  onClick={() =>
+                    openVictusLink('https://discord.gg/victuscloud', {
+                      openLinksExternally: config.openLinksExternally,
+                      showToast,
+                      title: 'Victus Discord',
+                    })
+                  }
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#5865F2] hover:bg-[#4752C4] text-white cursor-pointer shadow-sm transition-colors flex-shrink-0"
                 >
                   Join Discord
                 </button>
               </div>
             </div>
-          )}
-
-          {/* STATUS VIEW */}
-          {isStatus && (
-            <div className="space-y-4">
-              <div
-                className="p-4 sm:p-5 rounded-2xl border backdrop-blur-md"
-                style={{ backgroundColor: 'var(--panel)', borderColor: 'var(--line-soft)' }}
-              >
-                <div className="flex items-center gap-3 mb-4">
-                  <Activity className="w-5 h-5 text-emerald-400" />
+          ) : isStatus ? (
+            /* ======================================================== */
+            /* STATUS OVERVIEW */
+            /* ======================================================== */
+            <div className="w-full max-w-[64rem] mx-auto px-3 sm:px-6 py-4 pb-24 space-y-4">
+              <div className="p-5 rounded-2xl border border-white/[0.08] bg-[#14141c] shadow-sm">
+                <div className="flex items-center gap-3">
+                  <Activity className="w-6 h-6 text-emerald-400" />
                   <div>
-                    <h3 className="font-bold text-base">All Systems Operational</h3>
-                    <p className="text-xs opacity-70">Uptime: 99.98% across all global clusters</p>
+                    <h3 className="font-bold text-base text-white">All Systems Operational</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Global Cluster Uptime: 99.98% • DDoS Filtering: Active (12Tbps Cosmic Guard)
+                    </p>
                   </div>
                 </div>
+              </div>
 
-                <div className="space-y-2">
-                  {[
-                    { name: 'US-East Node Cluster', ping: '12ms', status: 'Operational' },
-                    { name: 'EU-Central Node Cluster', ping: '38ms', status: 'Operational' },
-                    { name: 'Website & SSO Gateway', ping: '8ms', status: 'Operational' },
-                    { name: 'Paymenter Billing Engine', ping: '15ms', status: 'Operational' },
-                    { name: 'Victus Drive S3 Storage', ping: '19ms', status: 'Operational' },
-                  ].map((node, i) => (
-                    <div
-                      key={i}
-                      className="p-3 rounded-xl bg-black/20 border border-white/5 flex items-center justify-between text-xs sm:text-sm"
-                    >
-                      <span className="font-semibold flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                        {node.name}
-                      </span>
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono text-xs opacity-60">{node.ping}</span>
-                        <span className="text-emerald-400 font-bold text-xs">{node.status}</span>
-                      </div>
+              <div className="p-4 rounded-xl border border-white/[0.08] bg-[#14141c] shadow-sm space-y-2">
+                {[
+                  { name: 'Virginia US-East Node Cluster (Ryzen 9 7950X)', ping: '12ms', status: 'Operational' },
+                  { name: 'Frankfurt EU-Central Node Cluster (Ryzen 9 7950X)', ping: '38ms', status: 'Operational' },
+                  { name: 'Singapore SG-1 Node Cluster (Ryzen 9 7950X)', ping: '8ms', status: 'Operational' },
+                  { name: 'Billing Engine (billing.victuscloud.com)', ping: '15ms', status: 'Operational' },
+                  { name: 'Pterodactyl Wings (control.victuscloud.com)', ping: '11ms', status: 'Operational' },
+                ].map((node, i) => (
+                  <div
+                    key={i}
+                    className="p-3 rounded-lg bg-black/30 border border-white/[0.04] flex items-center justify-between text-xs"
+                  >
+                    <span className="font-medium text-slate-200 flex items-center gap-2">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                      {node.name}
+                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-[11px] text-slate-500">{node.ping}</span>
+                      <span className="text-emerald-400 font-bold text-[11px]">{node.status}</span>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
               </div>
             </div>
-          )}
+          ) : (
+            /* ======================================================== */
+            /* WEBSITE GENERAL OVERVIEW */
+            /* ======================================================== */
+            <div className="w-full max-w-[64rem] mx-auto px-3 sm:px-6 py-4 pb-24 space-y-4">
+              <div className="p-5 rounded-2xl border border-white/[0.08] bg-[#14141c] shadow-sm">
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase inline-flex items-center gap-1.5 mb-2.5 bg-violet-500/10 text-violet-400 border border-violet-500/20">
+                  <Zap className="w-3 h-3" /> Next-Gen Cloud Ecosystem
+                </span>
+                <h3 className="text-xl sm:text-2xl font-bold text-white leading-tight">
+                  High-Performance Game Server &amp; Cloud Infrastructure
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-400 mt-1.5 leading-relaxed">
+                  Powered by AMD Ryzen 9 7950X processors, DDR5 memory, PCIe 4.0 NVMe storage, and 12Tbps Cosmic Guard DDoS protection.
+                </p>
+              </div>
 
-          {/* GENERAL / MARKETPLACE / WEBSITE VIEW */}
-          {!isControl && !isBilling && !isDrive && !isSupport && !isStatus && (
-            <div
-              className="p-6 rounded-2xl border backdrop-blur-md text-center"
-              style={{ backgroundColor: 'var(--panel)', borderColor: 'var(--line-soft)' }}
-            >
-              <h3 className="text-lg font-bold">Victus Cloud {isMarketplace ? 'Marketplace' : 'Portal'}</h3>
-              <p className="text-xs opacity-70 max-w-md mx-auto mt-2">
-                Explore resources, server templates, add-ons, and cloud features from our ecosystem hub.
-              </p>
-              <button
-                onClick={openExternal}
-                className="mt-4 px-5 py-2.5 rounded-xl text-xs font-bold text-white inline-flex items-center gap-2 cursor-pointer shadow-md"
-                style={{ background: 'linear-gradient(135deg, var(--accent-1), var(--accent-2))' }}
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                Launch Live Portal
-              </button>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="p-4 rounded-xl border border-white/[0.08] bg-[#14141c]">
+                  <Cpu className="w-4 h-4 mb-2 text-violet-400" />
+                  <h4 className="font-bold text-xs text-white">Ryzen 9 7950X</h4>
+                  <p className="text-[11px] text-slate-400 mt-1">5.7GHz single-core turbo clock speed for stutter-free gameplay.</p>
+                </div>
+                <div className="p-4 rounded-xl border border-white/[0.08] bg-[#14141c]">
+                  <ShieldCheck className="w-4 h-4 mb-2 text-emerald-400" />
+                  <h4 className="font-bold text-xs text-white">12Tbps Cosmic Guard</h4>
+                  <p className="text-[11px] text-slate-400 mt-1">Always-on Layer 3/4/7 DDoS mitigation keeps players connected.</p>
+                </div>
+                <div className="p-4 rounded-xl border border-white/[0.08] bg-[#14141c]">
+                  <Globe2 className="w-4 h-4 mb-2 text-sky-400" />
+                  <h4 className="font-bold text-xs text-white">Global Datacenters</h4>
+                  <p className="text-[11px] text-slate-400 mt-1">Virginia (US), Frankfurt (EU), Singapore (SG) with sub-20ms pings.</p>
+                </div>
+              </div>
             </div>
           )}
         </div>

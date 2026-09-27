@@ -9,6 +9,7 @@ export interface ThemeConfig {
   isCustomSolid: boolean;
   reduceMotion: boolean;
   colorMode: ColorMode;
+  openLinksExternally: boolean;
 }
 
 export interface DockTab {

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light variant of the app theme. System bars stay transparent and the
+         app draws edge-to-edge; insets are applied in MainActivity. -->
+    <style name="Theme.Victus" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:colorAccent">@color/brand_a</item>
+    </style>
+
+    <!-- Splash theme shown from cold start until MainActivity draws.
+         Uses the Android 12+ splash API via the core-splashscreen backport. -->
+    <style name="Theme.Victus.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_bg</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
+        <item name="postSplashScreenTheme">@style/Theme.Victus</item>
+    </style>
+
+    <!-- Slide-up window animation for the Settings sheet + a plain fade for the
+         color-picker dialog it launches. Pure View-animation resources — no
+         extra dependency, negligible cost. -->
+    <style name="SettingsSheetAnimation" parent="android:Animation">
+        <item name="android:windowEnterAnimation">@anim/sheet_slide_up</item>
+        <item name="android:windowExitAnimation">@anim/sheet_slide_down</item>
+    </style>
+
+    <style name="Theme.Victus.Dialog" parent="android:Theme.Material.Light.Dialog.NoActionBar">
+        <item name="android:colorAccent">@color/brand_a</item>
+        <item name="android:windowIsFloating">true</item>
+    </style>
+</resources>

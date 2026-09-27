@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark overrides — Purple → Black, the app's signature look. -->
+    <color name="window_bg">#07030D</color>
+    <color name="surface_topbar">#D9140A22</color>
+    <color name="divider">#26A855F7</color>
+    <color name="chip_bg">#26FFFFFF</color>
+    <color name="chip_stroke">#40C084FC</color>
+    <color name="chip_text">#ECE3FB</color>
+    <color name="chip_text_selected">#FFFFFF</color>
+    <color name="icon_tint">#E7D9FB</color>
+    <color name="title_text">#FFFFFF</color>
+    <color name="overlay_bg">#F207030D</color>
+    <color name="error_title">#FFFFFF</color>
+    <color name="error_text">#B9AACF</color>
+    <color name="splash_bg">#07030D</color>
+
+    <!-- Settings sheet surfaces. -->
+    <color name="sheet_bg">#150C24</color>
+    <color name="sheet_stroke">#26C084FC</color>
+    <color name="sheet_handle">#4DE7D9FB</color>
+    <color name="swatch_stroke">#40FFFFFF</color>
+</resources>

@@ -5,9 +5,15 @@ import { HomeView } from './components/HomeView.tsx';
 import { EcosystemFrame } from './components/EcosystemFrame.tsx';
 import { SettingsSheet } from './components/SettingsSheet.tsx';
 import { ToolsMenu } from './components/ToolsMenu.tsx';
+import { NotificationPanel } from './components/NotificationPanel.tsx';
+import { LoginModal } from './components/LoginModal.tsx';
+import { LoginScreen } from './components/LoginScreen.tsx';
+import { AccountProfileModal } from './components/AccountProfileModal.tsx';
+import { FloatingChatBubble } from './components/FloatingChatBubble.tsx';
 import { ClearSessionModal } from './components/ClearSessionModal.tsx';
 import { ErrorOverlay } from './components/ErrorOverlay.tsx';
 import { DockTab } from './types.ts';
+import { useAuth } from './context/AuthContext.tsx';
 
 interface HistoryEntry {
   tabId: string;
@@ -16,6 +22,8 @@ interface HistoryEntry {
 }
 
 export const App: React.FC = () => {
+  const { session, isLoading: isAuthLoading } = useAuth();
+
   const [history, setHistory] = useState<HistoryEntry[]>([
     { tabId: 'home', url: '', title: 'Victus Cloud' },
   ]);
@@ -26,6 +34,9 @@ export const App: React.FC = () => {
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isToolsOpen, setIsToolsOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isClearSessionOpen, setIsClearSessionOpen] = useState(false);
 
   const [errorState, setErrorState] = useState<{
@@ -141,21 +152,42 @@ export const App: React.FC = () => {
     triggerLoading();
   }, [triggerLoading]);
 
+  // Top-level Auth Gate: If checking storage, show loading; if no session, render LoginScreen
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#0a0a0f] text-white select-none">
+        <div className="w-12 h-12 flex items-center justify-center mb-4">
+          <svg viewBox="0 0 24 24" className="w-10 h-10 fill-violet-500 animate-pulse">
+            <path d="M12 2L1 21h22L12 2zm0 4.5l7 12H5l7-12z" />
+          </svg>
+        </div>
+        <div className="w-6 h-6 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <LoginScreen />;
+  }
+
   return (
-    <div className="min-h-screen flex flex-col relative text-[var(--text)]">
+    <div className="min-h-screen flex flex-col relative text-[var(--text)] bg-[var(--bg)] transition-colors duration-250">
       {/* Top native chrome */}
       <TopBar
         canGoBack={canGoBack}
         onBack={handleBack}
         onRefresh={handleRefresh}
         onOpenTools={() => setIsToolsOpen(true)}
+        onOpenNotifications={() => setIsNotificationsOpen(true)}
+        onOpenLogin={() => (session ? setIsProfileOpen(true) : setIsLoginOpen(true))}
+        onOpenProfile={() => setIsProfileOpen(true)}
         isLoading={isLoading}
         progress={progress}
         currentTitle={currentEntry.title}
       />
 
       {/* Main content body */}
-      <main className="flex-1 w-full relative z-10">
+      <main className="flex-1 w-full relative z-10 flex flex-col">
         {currentEntry.tabId === 'home' || !currentEntry.url ? (
           <HomeView onNavigate={(url, title, tabId) => navigateTo(url, title, tabId)} />
         ) : (
@@ -163,12 +195,20 @@ export const App: React.FC = () => {
             url={currentEntry.url}
             title={currentEntry.title}
             onNavigateHome={() => navigateTo('', 'Victus Cloud', 'home')}
+            onNavigate={(navUrl, navTitle, navTabId) => navigateTo(navUrl, navTitle, navTabId)}
             onTriggerError={(msg, failing) =>
               setErrorState({ isOpen: true, message: msg, failingUrl: failing })
             }
           />
         )}
       </main>
+
+      {/* Moveable Floating Chat Bubble */}
+      <FloatingChatBubble
+        onNavigateSupport={() =>
+          navigateTo('https://victuscloud.com/support', 'Support Hub', 'support')
+        }
+      />
 
       {/* Bottom Dock Navigation */}
       <DockBar
@@ -184,12 +224,34 @@ export const App: React.FC = () => {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onNavigate={(url, title, tabId) => navigateTo(url, title, tabId)}
         onOpenClearSession={() => setIsClearSessionOpen(true)}
+        onOpenLogin={() => (session ? setIsProfileOpen(true) : setIsLoginOpen(true))}
+        onOpenProfile={() => setIsProfileOpen(true)}
       />
 
       {/* Settings / Appearance Sheet */}
       <SettingsSheet
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+      />
+
+      {/* Notifications Panel */}
+      <NotificationPanel
+        isOpen={isNotificationsOpen}
+        onClose={() => setIsNotificationsOpen(false)}
+        onNavigate={(url, title, tabId) => navigateTo(url, title, tabId)}
+      />
+
+      {/* Account Profile Modal (when session is active) */}
+      <AccountProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        onNavigate={(url, title, tabId) => navigateTo(url, title, tabId)}
+      />
+
+      {/* Login / Auth Modal */}
+      <LoginModal
+        isOpen={isLoginOpen}
+        onClose={() => setIsLoginOpen(false)}
       />
 
       {/* Clear Session Modal */}

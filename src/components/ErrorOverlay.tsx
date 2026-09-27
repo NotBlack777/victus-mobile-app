@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTheme } from '../context/ThemeContext.tsx';
+import { openVictusLink } from '../utils/navigation.ts';
 
 interface ErrorOverlayProps {
   isOpen: boolean;
@@ -16,68 +17,62 @@ export const ErrorOverlay: React.FC<ErrorOverlayProps> = ({
   onRetry,
   onGoHome,
 }) => {
-  const { gradientColors } = useTheme();
+  const { config } = useTheme();
 
   if (!isOpen) return null;
 
-  const [c1, c2, c3] = gradientColors;
-  const accentGradient = `linear-gradient(135deg, ${c1}, ${c2}, ${c3})`;
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-5 backdrop-blur-md animate-in fade-in duration-200 select-none"
-      style={{ backgroundColor: 'rgba(7, 3, 13, 0.88)' }}
-    >
-      <div
-        className="w-full max-w-sm rounded-[28px] p-7 border text-center shadow-2xl relative"
-        style={{
-          backgroundColor: 'var(--sheet-bg)',
-          borderColor: 'var(--sheet-stroke)',
-          color: 'var(--text)',
-        }}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-in fade-in duration-200 select-none">
+      <div className="w-full max-w-sm rounded-xl p-5 border border-white/[0.08] bg-[#14141c] text-white text-center shadow-2xl relative">
         {/* "!" accent circle glyph */}
-        <div
-          className="w-16 h-16 rounded-full mx-auto mb-5 flex items-center justify-center text-white text-2xl font-black shadow-lg"
-          style={{ background: accentGradient }}
-        >
+        <div className="w-12 h-12 rounded-xl mx-auto mb-3.5 bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 text-xl font-black">
           !
         </div>
 
-        <h3 className="text-xl font-bold mb-2">Can't reach Victus Cloud</h3>
+        <h3 className="text-base font-bold text-white mb-1.5">Can't reach Victus Cloud</h3>
 
-        <p className="text-xs opacity-75 leading-relaxed mb-1 whitespace-pre-line">
+        <p className="text-xs text-slate-400 leading-relaxed mb-1 whitespace-pre-line">
           {message || 'Failed to establish connection to cloud node.'}
         </p>
 
-        <p className="text-xs opacity-50 mb-6">
-          Check your connection, then try again.
+        <p className="text-[11px] text-slate-500 mb-4">
+          Check your network connection, then try again.
         </p>
 
         {failingUrl && (
-          <p className="text-[10px] font-mono opacity-40 truncate mb-5 px-2">
+          <p className="text-[10px] font-mono text-slate-500 truncate mb-4 px-2">
             Target: {failingUrl}
           </p>
         )}
 
-        <div className="space-y-2.5">
+        <div className="space-y-2">
           <button
             onClick={onRetry}
-            className="w-full min-h-[48px] px-5 rounded-2xl font-bold text-sm text-white shadow-md transition-all cursor-pointer hover:brightness-105 active:scale-98"
-            style={{ background: accentGradient }}
+            className="w-full min-h-[40px] px-4 rounded-lg font-bold text-xs text-white bg-violet-600 hover:bg-violet-500 shadow-sm transition-all cursor-pointer active:scale-95"
           >
-            Retry
+            Retry Connection
           </button>
 
           <button
             onClick={onGoHome}
-            className="w-full min-h-[48px] px-5 rounded-2xl font-bold text-sm border transition-all cursor-pointer hover:bg-white/5 active:scale-98"
-            style={{
-              borderColor: 'var(--line-soft)',
-              backgroundColor: 'var(--panel)',
-            }}
+            className="w-full min-h-[40px] px-4 rounded-lg font-semibold text-xs border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 transition-all cursor-pointer"
           >
-            Go home
+            Go to Home Dashboard
+          </button>
+
+          <button
+            onClick={() => {
+              if (failingUrl) {
+                openVictusLink(failingUrl, {
+                  openLinksExternally: config.openLinksExternally,
+                  title: 'Victus Cloud',
+                });
+              }
+              onGoHome();
+            }}
+            className="w-full min-h-[38px] px-4 rounded-lg text-xs font-medium border border-white/[0.06] text-slate-400 hover:text-white transition-colors cursor-pointer"
+          >
+            Open in External Browser
           </button>
         </div>
       </div>

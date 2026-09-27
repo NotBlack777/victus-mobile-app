@@ -1,6 +1,9 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
+  color-scheme: dark;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -16,96 +19,97 @@
   --r-pill: 999px;
   --tap: 3rem; /* 48px min touch target */
 
-  /* Default brand accents (Purple -> Black) */
-  --accent-1: #c084fc;
+  /* Theme accents set dynamically by ThemeContext.tsx */
+  --accent-1: #8b5cf6;
   --accent-2: #7c3aed;
-  --accent-3: #0b0014;
-  --accent-1-rgb: 192, 132, 252;
+  --accent-3: #0a0a0f;
+  --accent-1-rgb: 139, 92, 246;
   --accent-2-rgb: 124, 58, 237;
-  --accent-3-rgb: 11, 0, 20;
-  --teal: #13c8a6;
-  --green: #6ee7b7;
+  --accent-3-rgb: 10, 10, 15;
+  --teal: #06b6d4;
+  --green: #10b981;
 
-  /* Dark theme identity */
-  --bg: #07030d;
-  --surface-topbar: #140a22;
-  --divider: rgba(168, 85, 247, 0.2);
-  --chip-bg: rgba(255, 255, 255, 0.08);
-  --chip-stroke: rgba(192, 132, 252, 0.25);
-  --chip-text: #ece3fb;
+  /* Surfaces & typography set dynamically by ThemeContext.tsx */
+  --bg: #0a0a0f;
+  --surface-topbar: rgba(12, 12, 18, 0.95);
+  --divider: rgba(255, 255, 255, 0.08);
+  --chip-bg: rgba(255, 255, 255, 0.04);
+  --chip-stroke: rgba(255, 255, 255, 0.08);
+  --chip-text: #cbd5e1;
   --chip-text-selected: #ffffff;
-  --panel: rgba(255, 255, 255, 0.075);
-  --panel-strong: rgba(255, 255, 255, 0.105);
-  --line: rgba(192, 132, 252, 0.22);
-  --line-soft: rgba(255, 255, 255, 0.11);
+  --panel: #14141c;
+  --panel-strong: #171722;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-soft: rgba(255, 255, 255, 0.06);
   --text: #ffffff;
   --title-text: #ffffff;
-  --muted: rgba(255, 255, 255, 0.64);
-  --faint: rgba(255, 255, 255, 0.44);
-  --eyebrow: rgba(224, 196, 255, 0.78);
-  --metric-bg: rgba(0, 0, 0, 0.25);
-  --quick-bg: rgba(255, 255, 255, 0.055);
-  --arrow-bg: rgba(var(--accent-1-rgb), 0.18);
-  --arrow-text: #ecd9ff;
-  --tag-text: #b7f7dc;
-  --grid-line: rgba(255, 255, 255, 0.035);
-  --sheet-bg: #150c24;
-  --sheet-stroke: rgba(192, 132, 252, 0.2);
-  --shadow-hero: 0 1.75rem 5.625rem rgba(0, 0, 0, 0.42);
-  --shadow-card: 0 1.375rem 3.75rem rgba(0, 0, 0, 0.3);
-  --shadow-logo: 0 1.125rem 3.4375rem rgba(var(--accent-1-rgb), 0.4);
-  --shadow-glyph: 0 0.875rem 2rem rgba(var(--accent-1-rgb), 0.25);
-  --shadow-primary: 0 1.125rem 3.125rem rgba(var(--accent-1-rgb), 0.34);
+  --muted: #94a3b8;
+  --faint: #64748b;
+  --eyebrow: #a78bfa;
+  --metric-bg: #121219;
+  --quick-bg: rgba(255, 255, 255, 0.03);
+  --arrow-bg: rgba(139, 92, 246, 0.15);
+  --arrow-text: #a78bfa;
+  --tag-text: #34d399;
+  --grid-line: rgba(255, 255, 255, 0.02);
+  --sheet-bg: #111117;
+  --sheet-stroke: rgba(255, 255, 255, 0.08);
+  --shadow-hero: 0 1.75rem 5.625rem rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 1.375rem 3.75rem rgba(0, 0, 0, 0.4);
+  --shadow-logo: 0 1.125rem 3.4375rem rgba(139, 92, 246, 0.35);
+  --shadow-glyph: 0 0.875rem 2rem rgba(139, 92, 246, 0.2);
+  --shadow-primary: 0 1.125rem 3.125rem rgba(139, 92, 246, 0.3);
   --bg-image:
-    radial-gradient(circle at 8% 2%, rgba(var(--accent-1-rgb), 0.32), transparent 23rem),
-    radial-gradient(circle at 100% 18%, rgba(var(--accent-2-rgb), 0.26), transparent 22rem),
-    linear-gradient(145deg, #07030d, #0d0619 48%, #05010a);
+    radial-gradient(circle at 10% 5%, rgba(139, 92, 246, 0.15), transparent 25rem),
+    radial-gradient(circle at 95% 15%, rgba(124, 58, 237, 0.12), transparent 22rem),
+    linear-gradient(180deg, #0a0a0f, #0d0d14 48%, #08080c);
   --grid-mask: linear-gradient(to bottom, rgba(0, 0, 0, 0.5), transparent 70%);
 }
 
-/* Light mode overrides */
+/* Light mode base overrides */
 html.light {
-  --bg: #f6f2fc;
-  --surface-topbar: rgba(255, 255, 255, 0.92);
-  --divider: rgba(91, 33, 166, 0.16);
-  --chip-bg: rgba(255, 255, 255, 0.7);
-  --chip-stroke: rgba(109, 40, 217, 0.24);
-  --chip-text: #241333;
+  color-scheme: light;
+  --bg: #f8fafc;
+  --surface-topbar: rgba(255, 255, 255, 0.94);
+  --divider: rgba(15, 23, 42, 0.12);
+  --chip-bg: rgba(255, 255, 255, 0.8);
+  --chip-stroke: rgba(15, 23, 42, 0.16);
+  --chip-text: #0f172a;
   --chip-text-selected: #ffffff;
-  --panel: rgba(35, 10, 64, 0.045);
-  --panel-strong: rgba(255, 255, 255, 0.75);
-  --line: rgba(124, 58, 237, 0.24);
-  --line-soft: rgba(35, 10, 64, 0.13);
-  --text: #1a0b2e;
-  --title-text: #1a0b2e;
-  --muted: rgba(26, 11, 46, 0.68);
-  --faint: rgba(26, 11, 46, 0.48);
-  --eyebrow: rgba(124, 58, 237, 0.82);
-  --metric-bg: rgba(255, 255, 255, 0.55);
-  --quick-bg: rgba(255, 255, 255, 0.6);
-  --arrow-bg: rgba(var(--accent-1-rgb), 0.16);
-  --arrow-text: #5b21b6;
-  --tag-text: #0b513b;
-  --grid-line: rgba(35, 10, 64, 0.05);
+  --panel: #ffffff;
+  --panel-strong: #f1f5f9;
+  --line: rgba(15, 23, 42, 0.14);
+  --line-soft: rgba(15, 23, 42, 0.08);
+  --text: #0f172a;
+  --title-text: #0f172a;
+  --muted: rgba(15, 23, 42, 0.68);
+  --faint: rgba(15, 23, 42, 0.48);
+  --eyebrow: rgba(var(--accent-1-rgb), 0.9);
+  --metric-bg: rgba(255, 255, 255, 0.85);
+  --quick-bg: rgba(255, 255, 255, 0.9);
+  --arrow-bg: rgba(var(--accent-1-rgb), 0.14);
+  --arrow-text: var(--accent-1);
+  --tag-text: #065f46;
+  --grid-line: rgba(15, 23, 42, 0.04);
   --sheet-bg: #ffffff;
-  --sheet-stroke: rgba(26, 11, 46, 0.12);
-  --shadow-hero: 0 1.75rem 5rem rgba(76, 29, 149, 0.16);
-  --shadow-card: 0 1.25rem 3rem rgba(76, 29, 149, 0.1);
+  --sheet-stroke: rgba(15, 23, 42, 0.12);
+  --shadow-hero: 0 1.75rem 5rem rgba(0, 0, 0, 0.08);
+  --shadow-card: 0 1.25rem 3rem rgba(0, 0, 0, 0.05);
   --shadow-logo: 0 1.125rem 3rem rgba(var(--accent-1-rgb), 0.3);
   --shadow-glyph: 0 0.875rem 1.75rem rgba(var(--accent-1-rgb), 0.2);
   --shadow-primary: 0 1.125rem 2.5rem rgba(var(--accent-1-rgb), 0.28);
   --bg-image:
-    radial-gradient(circle at 8% 2%, rgba(var(--accent-1-rgb), 0.18), transparent 23rem),
-    radial-gradient(circle at 100% 18%, rgba(var(--accent-2-rgb), 0.14), transparent 22rem),
-    linear-gradient(145deg, #f9f6ff, #f1e9fc 48%, #ece3fa);
-  --grid-mask: linear-gradient(to bottom, rgba(0, 0, 0, 0.35), transparent 70%);
+    radial-gradient(circle at 8% 2%, rgba(var(--accent-1-rgb), 0.14), transparent 23rem),
+    radial-gradient(circle at 100% 18%, rgba(var(--accent-2-rgb), 0.1), transparent 22rem),
+    linear-gradient(145deg, #f8fafc, #f1f5f9 48%, #e2e8f0);
+  --grid-mask: linear-gradient(to bottom, rgba(0, 0, 0, 0.3), transparent 70%);
 }
 
 /* Reduce motion mode */
 html.reduce-motion,
 html.reduce-motion * {
-  transition-duration: 0s !important;
-  animation-duration: 0s !important;
+  transition-duration: 0.01s !important;
+  animation-duration: 0.01s !important;
 }
 
 body {
@@ -118,6 +122,7 @@ body {
   background-attachment: fixed;
   overflow-x: hidden;
   -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 body::before {

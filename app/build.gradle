@@ -1,0 +1,48 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.victuscloud.ecosystem'
+    // Current stable Android API level (Android 15). Edge-to-edge is enforced at 35+,
+    // which this codebase handles properly via WindowInsets.
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.victuscloud.ecosystem'
+        // API 23 covers mdpi..xxxhdpi and every refresh-rate API we need.
+        minSdk 23
+        targetSdk 35
+        versionCode 22
+        versionName '2.1.1'
+    }
+
+    buildTypes {
+        debug {
+            // Debug builds keep the original applicationId so the phone-only
+            // workflow produces an installable update path for testers.
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    // Edge-to-edge + predictive back (OnBackPressedDispatcher) + insets helpers.
+    implementation 'androidx.activity:activity:1.10.1'
+    implementation 'androidx.core:core:1.15.0'
+    // Android 12+ splash screen API, backported to our minSdk.
+    implementation 'androidx.core:core-splashscreen:1.0.1'
+    // WebViewAssetLoader + WebSettingsCompat: current replacements for file:// hacks
+    // and deprecated WebSettings flags.
+    implementation 'androidx.webkit:webkit:1.12.1'
+}

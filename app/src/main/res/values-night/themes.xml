@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark variant of the app theme (the original Victus look). -->
+    <style name="Theme.Victus" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/window_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:colorAccent">@color/brand_a</item>
+    </style>
+
+    <style name="Theme.Victus.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_bg</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
+        <item name="postSplashScreenTheme">@style/Theme.Victus</item>
+    </style>
+
+    <style name="SettingsSheetAnimation" parent="android:Animation">
+        <item name="android:windowEnterAnimation">@anim/sheet_slide_up</item>
+        <item name="android:windowExitAnimation">@anim/sheet_slide_down</item>
+    </style>
+
+    <style name="Theme.Victus.Dialog" parent="android:Theme.Material.Dialog.NoActionBar">
+        <item name="android:colorAccent">@color/brand_a</item>
+        <item name="android:windowIsFloating">true</item>
+    </style>
+</resources>

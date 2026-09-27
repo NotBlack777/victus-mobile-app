@@ -1,5 +1,17 @@
 import React from 'react';
-import { ArrowRight } from 'lucide-react';
+import {
+  ArrowRight,
+  Server,
+  CreditCard,
+  HardDrive,
+  LifeBuoy,
+  Activity,
+  ShoppingBag,
+  Globe,
+  Zap,
+  Sparkles,
+} from 'lucide-react';
+import { useTheme } from '../context/ThemeContext.tsx';
 
 interface HomeViewProps {
   onNavigate: (url: string, title?: string, tabId?: string) => void;
@@ -9,7 +21,7 @@ interface PanelCardItem {
   id: string;
   title: string;
   tag: string;
-  glyph: string;
+  icon: React.ElementType;
   desc: string;
   url: string;
 }
@@ -19,57 +31,60 @@ interface QuickActionItem {
   title: string;
   sub: string;
   url: string;
+  icon: React.ElementType;
 }
 
 export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
+  const { isDark } = useTheme();
+
   const panels: PanelCardItem[] = [
     {
       id: 'website',
       title: 'Main Website',
-      tag: 'Main',
-      glyph: 'W',
-      desc: 'Dashboard, marketplace, storage, community, support, free hosting, and account flows.',
+      tag: 'PORTAL',
+      icon: Globe,
+      desc: 'Explore cloud hosting services, game plans, datacenter locations, and account flows.',
       url: 'https://victuscloud.com',
-    },
-    {
-      id: 'billing',
-      title: 'Billing Panel',
-      tag: 'Paymenter',
-      glyph: 'B',
-      desc: 'Invoices, orders, credits, payment methods, top-ups, and service billing.',
-      url: 'https://billing.victuscloud.com',
     },
     {
       id: 'control',
       title: 'Control Panel',
-      tag: 'Live',
-      glyph: 'C',
-      desc: 'The current production panel for server power, files, console, schedules, and databases.',
+      tag: 'PRODUCTION',
+      icon: Server,
+      desc: 'Pterodactyl production panel for server power, terminal console, schedules, and file management.',
       url: 'https://control.victuscloud.com',
     },
     {
-      id: 'testpanel',
-      title: 'Victus Panel',
-      tag: 'Beta',
-      glyph: 'P',
-      desc: 'The new panel being developed for the next-generation Victus experience.',
-      url: 'https://testpanel.victuscloud.com',
+      id: 'billing',
+      title: 'Billing Panel',
+      tag: 'PAYMENTS',
+      icon: CreditCard,
+      desc: 'Paymenter engine for invoices, top-ups, cloud subscriptions, and automated renewal.',
+      url: 'https://billing.victuscloud.com',
     },
     {
       id: 'drive',
       title: 'Victus Drive',
-      tag: 'Storage',
-      glyph: 'D',
-      desc: 'Upload, download, preview, and manage cloud files directly from the app.',
+      tag: 'STORAGE',
+      icon: HardDrive,
+      desc: 'High-speed object storage, server backup archives, and file sharing repository.',
       url: 'https://drive.victuscloud.com',
     },
     {
       id: 'support',
-      title: 'Support',
-      tag: 'Chat',
-      glyph: 'S',
-      desc: 'Open website support, public lounge, tickets, documentation, and Discord links.',
+      title: 'Support Hub',
+      tag: '24/7 HELP',
+      icon: LifeBuoy,
+      desc: 'Ticket manager, documentation guides, knowledge base, and official Discord lounge.',
       url: 'https://victuscloud.com/support',
+    },
+    {
+      id: 'status',
+      title: 'System Status',
+      tag: 'UPTIME 99.9%',
+      icon: Activity,
+      desc: 'Real-time telemetry, node cluster pings, incident logs, and DDoS mitigation status.',
+      url: 'https://victuscloud.com/status',
     },
   ];
 
@@ -77,254 +92,281 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
     {
       id: 'marketplace',
       title: 'Marketplace',
-      sub: 'Buy and sell resources',
+      sub: 'Server plugins & themes',
       url: 'https://victuscloud.com/marketplace',
+      icon: ShoppingBag,
     },
     {
       id: 'free',
-      title: 'Free hosting',
-      sub: 'Launch page and countdown',
+      title: 'Free Hosting',
+      sub: 'Community tier launch',
       url: 'https://victuscloud.com/free',
+      icon: Zap,
     },
     {
       id: 'files',
-      title: 'Storage hub',
-      sub: 'Files and image hosting',
+      title: 'Storage Hub',
+      sub: 'Drive repository',
       url: 'https://victuscloud.com/files',
-    },
-    {
-      id: 'status',
-      title: 'System status',
-      sub: 'Service health',
-      url: 'https://victuscloud.com/status',
+      icon: HardDrive,
     },
     {
       id: 'community',
-      title: 'Community',
-      sub: 'Posts, forums, gallery',
-      url: 'https://victuscloud.com/community',
-    },
-    {
-      id: 'settings',
-      title: 'Account settings',
-      sub: 'Profile and links',
-      url: 'https://victuscloud.com/settings',
+      title: 'Discord Lounge',
+      sub: '5,000+ member chat',
+      url: 'https://discord.gg/victuscloud',
+      icon: Sparkles,
     },
   ];
 
   return (
-    <div className="w-full max-w-[61.25rem] mx-auto px-3 sm:px-6 pt-5 pb-28 animate-in fade-in duration-300">
-      {/* Hero card with glassmorphism */}
+    <div className="w-full max-w-[64rem] mx-auto px-3 sm:px-6 pt-4 pb-24 space-y-4 animate-in fade-in duration-200">
+      {/* Hero card matching admin panel elevation (#111117 / border-white/[0.08]) */}
       <section
-        className="rounded-[1.75rem] p-5 sm:p-7 border backdrop-blur-xl relative overflow-hidden transition-all"
+        className="rounded-xl p-5 sm:p-6 border relative overflow-hidden shadow-sm transition-colors duration-200"
         style={{
-          background: 'linear-gradient(145deg, var(--panel-strong), var(--panel))',
+          backgroundColor: 'var(--panel)',
           borderColor: 'var(--line)',
-          boxShadow: 'var(--shadow-hero), inset 0 1px 1.375rem rgba(255,255,255,0.05)',
         }}
       >
-        <div className="flex items-center gap-4">
-          <img
-            src="/victus-logo.png"
-            alt="Victus Cloud"
-            className="w-13 h-13 sm:w-14 sm:h-14 rounded-[1.125rem] object-contain p-2 flex-shrink-0"
-            style={{
-              background: 'linear-gradient(145deg, var(--accent-1), var(--accent-2) 52%, var(--accent-3))',
-              boxShadow: 'var(--shadow-logo)',
-            }}
-          />
-          <div>
-            <p
-              className="text-[11px] font-extrabold uppercase tracking-[0.22em] mb-1.5"
-              style={{ color: 'var(--eyebrow)' }}
-            >
-              Victus Cloud Mobile
-            </p>
-            <h2 className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight leading-[0.98]">
-              Control your cloud from one app.
-            </h2>
-          </div>
-        </div>
-
-        <p className="mt-4 text-sm sm:text-base leading-relaxed max-w-2xl" style={{ color: 'var(--muted)' }}>
-          Billing, servers, storage, marketplace, support, and the new Victus panel live in one secure app shell with native upload, download, share, copy, and session tools.
-        </p>
-
-        {/* Hero actions */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-5">
-          <button
-            onClick={() => onNavigate('https://victuscloud.com/login', 'Sign In', 'website')}
-            className="min-h-[48px] px-5 rounded-[1.125rem] font-extrabold text-sm text-white flex items-center justify-center transition-all cursor-pointer hover:brightness-105 active:scale-98"
-            style={{
-              background: 'linear-gradient(135deg, var(--accent-1), var(--accent-2), var(--accent-3))',
-              boxShadow: 'var(--shadow-primary)',
-            }}
-          >
-            Sign in to Victus
-          </button>
-          <button
-            onClick={() => onNavigate('https://control.victuscloud.com', 'Control Panel', 'control')}
-            className="min-h-[48px] px-5 rounded-[1.125rem] font-extrabold text-sm flex items-center justify-center border transition-all cursor-pointer hover:brightness-105 active:scale-98"
-            style={{
-              borderColor: 'var(--line-soft)',
-              backgroundColor: 'var(--panel)',
-              color: 'var(--text)',
-            }}
-          >
-            Open Control Panel
-          </button>
-        </div>
-
-        {/* Status Strip */}
-        <div className="grid grid-cols-3 gap-2.5 sm:gap-3 mt-4">
-          <div
-            className="border rounded-[1.125rem] p-3 text-center sm:text-left"
-            style={{
-              borderColor: 'var(--line-soft)',
-              backgroundColor: 'var(--metric-bg)',
-            }}
-          >
-            <strong className="block text-base sm:text-lg font-bold">.com</strong>
-            <span
-              className="block text-[10px] sm:text-[11px] font-bold uppercase tracking-wider mt-0.5"
-              style={{ color: 'var(--faint)' }}
-            >
-              Live domain
-            </span>
-          </div>
-
-          <div
-            className="border rounded-[1.125rem] p-3 text-center sm:text-left"
-            style={{
-              borderColor: 'var(--line-soft)',
-              backgroundColor: 'var(--metric-bg)',
-            }}
-          >
-            <strong className="block text-base sm:text-lg font-bold">SSO</strong>
-            <span
-              className="block text-[10px] sm:text-[11px] font-bold uppercase tracking-wider mt-0.5"
-              style={{ color: 'var(--faint)' }}
-            >
-              Panel flow
-            </span>
-          </div>
-
-          <div
-            className="border rounded-[1.125rem] p-3 text-center sm:text-left"
-            style={{
-              borderColor: 'var(--line-soft)',
-              backgroundColor: 'var(--metric-bg)',
-            }}
-          >
-            <strong className="block text-base sm:text-lg font-bold">24/7</strong>
-            <span
-              className="block text-[10px] sm:text-[11px] font-bold uppercase tracking-wider mt-0.5"
-              style={{ color: 'var(--faint)' }}
-            >
-              Support hub
-            </span>
-          </div>
-        </div>
-      </section>
-
-      {/* Core panels section */}
-      <div className="flex items-baseline justify-between gap-3 mt-7 mb-3 px-1">
-        <div>
-          <h3 className="text-lg font-bold tracking-tight">Core panels</h3>
-          <p className="text-xs" style={{ color: 'var(--faint)' }}>
-            Native dock mirrors these routes
-          </p>
-        </div>
-      </div>
-
-      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3" aria-label="Victus Cloud panels">
-        {panels.map((panel) => (
-          <div
-            key={panel.id}
-            onClick={() => onNavigate(panel.url, panel.title, panel.id)}
-            role="button"
-            tabIndex={0}
-            className="min-h-[9.625rem] p-4 rounded-[1.375rem] border transition-all cursor-pointer hover:-translate-y-0.5 active:translate-y-0"
-            style={{
-              borderColor: 'var(--line-soft)',
-              background: 'linear-gradient(145deg, var(--panel-strong), var(--panel))',
-              boxShadow: 'inset 0 1px 1.25rem rgba(255,255,255,0.035), var(--shadow-card)',
-            }}
-          >
-            <div className="flex items-center justify-between gap-3 mb-3">
-              <div
-                className="w-10 h-10 rounded-[0.9375rem] flex items-center justify-center font-black text-lg text-white"
-                style={{
-                  background: 'linear-gradient(145deg, rgba(var(--accent-1-rgb),0.92), rgba(var(--accent-3-rgb),0.78))',
-                  boxShadow: 'var(--shadow-glyph)',
-                }}
-              >
-                {panel.glyph}
-              </div>
-              <span
-                className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider border"
-                style={{
-                  backgroundColor: 'rgba(110,231,183,0.11)',
-                  borderColor: 'rgba(110,231,183,0.28)',
-                  color: 'var(--tag-text)',
-                }}
-              >
-                {panel.tag}
-              </span>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-xl bg-violet-600/20 border border-violet-500/30 flex items-center justify-center p-2 flex-shrink-0">
+              <img
+                src="/victus-logo.png"
+                alt="Victus Cloud"
+                className="w-full h-full object-contain"
+              />
             </div>
-            <strong className="block text-base font-bold mb-1.5">{panel.title}</strong>
-            <span className="block text-xs leading-relaxed" style={{ color: 'var(--muted)' }}>
-              {panel.desc}
-            </span>
-          </div>
-        ))}
-      </section>
-
-      {/* Quick actions section */}
-      <div className="flex items-baseline justify-between gap-3 mt-7 mb-3 px-1">
-        <div>
-          <h3 className="text-lg font-bold tracking-tight">Quick actions</h3>
-          <p className="text-xs" style={{ color: 'var(--faint)' }}>
-            Common routes, one tap
-          </p>
-        </div>
-      </div>
-
-      <section className="grid grid-cols-1 sm:grid-cols-2 gap-3" aria-label="Victus quick actions">
-        {quickActions.map((action) => (
-          <div
-            key={action.id}
-            onClick={() => onNavigate(action.url, action.title)}
-            role="button"
-            tabIndex={0}
-            className="min-h-[48px] px-4 py-3 rounded-[1.125rem] border flex items-center justify-between gap-3 transition-all cursor-pointer hover:-translate-y-0.5 active:translate-y-0"
-            style={{
-              borderColor: 'var(--line-soft)',
-              backgroundColor: 'var(--quick-bg)',
-            }}
-          >
             <div>
-              <span className="block text-sm font-extrabold">{action.title}</span>
-              <small className="block text-[11px] font-medium" style={{ color: 'var(--faint)' }}>
-                {action.sub}
-              </small>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-violet-400">
+                  Victus Cloud Ecosystem
+                </span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              </div>
+              <h2
+                className="text-xl sm:text-2xl font-bold tracking-tight mt-0.5"
+                style={{ color: 'var(--title-text)' }}
+              >
+                Control your cloud from one app.
+              </h2>
             </div>
-            <div
-              className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
+          </div>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={() => onNavigate('https://control.victuscloud.com', 'Control Panel', 'control')}
+              className="px-4 py-2 rounded-lg text-xs font-bold text-white bg-violet-600 hover:bg-violet-500 shadow-sm transition-all cursor-pointer active:scale-95"
+            >
+              Control Panel
+            </button>
+            <button
+              onClick={() => onNavigate('https://billing.victuscloud.com', 'Billing', 'billing')}
+              className="px-3.5 py-2 rounded-lg text-xs font-bold border transition-all cursor-pointer"
               style={{
-                backgroundColor: 'var(--arrow-bg)',
-                color: 'var(--arrow-text)',
+                borderColor: 'var(--line)',
+                backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
+                color: 'var(--text)',
               }}
             >
-              <ArrowRight className="w-3.5 h-3.5" />
-            </div>
+              Billing
+            </button>
           </div>
-        ))}
+        </div>
+
+        <p
+          className="mt-3 text-xs sm:text-sm leading-relaxed max-w-2xl"
+          style={{ color: 'var(--muted)' }}
+        >
+          Servers, billing, object drive, support, and cluster status unified in a native management shell powered by AMD Ryzen 9 7950X compute and 12Tbps Cosmic Guard DDoS filtering.
+        </p>
+
+        {/* Status Metric Strip */}
+        <div
+          className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t"
+          style={{ borderColor: 'var(--divider)' }}
+        >
+          <div
+            className="p-2.5 rounded-lg border"
+            style={{
+              backgroundColor: 'var(--panel-strong)',
+              borderColor: 'var(--line-soft)',
+            }}
+          >
+            <strong
+              className="block text-xs sm:text-sm font-bold"
+              style={{ color: 'var(--title-text)' }}
+            >
+              .com Live
+            </strong>
+            <span
+              className="block text-[10px] font-medium uppercase mt-0.5"
+              style={{ color: 'var(--faint)' }}
+            >
+              Production Gateway
+            </span>
+          </div>
+
+          <div
+            className="p-2.5 rounded-lg border"
+            style={{
+              backgroundColor: 'var(--panel-strong)',
+              borderColor: 'var(--line-soft)',
+            }}
+          >
+            <strong
+              className="block text-xs sm:text-sm font-bold"
+              style={{ color: 'var(--title-text)' }}
+            >
+              Ryzen 9 7950X
+            </strong>
+            <span
+              className="block text-[10px] font-medium uppercase mt-0.5"
+              style={{ color: 'var(--faint)' }}
+            >
+              5.7GHz Node Power
+            </span>
+          </div>
+
+          <div
+            className="p-2.5 rounded-lg border"
+            style={{
+              backgroundColor: 'var(--panel-strong)',
+              borderColor: 'var(--line-soft)',
+            }}
+          >
+            <strong
+              className="block text-xs sm:text-sm font-bold"
+              style={{ color: 'var(--title-text)' }}
+            >
+              12Tbps Filter
+            </strong>
+            <span
+              className="block text-[10px] font-medium uppercase mt-0.5"
+              style={{ color: 'var(--faint)' }}
+            >
+              Cosmic Guard DDoS
+            </span>
+          </div>
+        </div>
       </section>
 
-      <footer className="mt-7 px-1 text-xs leading-relaxed opacity-60">
-        The top Tools menu adds browser open, copy link, share link, test panel, support, status, marketplace, and clear app session. Back navigation traverses recent ecosystem routes before returning home.
-      </footer>
+      {/* Core Panels Section */}
+      <div>
+        <div className="flex items-center justify-between mb-2.5 px-0.5">
+          <h3
+            className="text-xs font-bold uppercase tracking-wider"
+            style={{ color: 'var(--muted)' }}
+          >
+            Ecosystem Portals
+          </h3>
+          <span className="text-[11px]" style={{ color: 'var(--faint)' }}>
+            Tap to load
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+          {panels.map((panel) => {
+            const Icon = panel.icon;
+            return (
+              <div
+                key={panel.id}
+                onClick={() => onNavigate(panel.url, panel.title, panel.id)}
+                role="button"
+                tabIndex={0}
+                className="p-4 rounded-xl border hover:border-violet-500/30 transition-all cursor-pointer group flex flex-col justify-between"
+                style={{
+                  backgroundColor: 'var(--panel)',
+                  borderColor: 'var(--line)',
+                }}
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-violet-600/15 border border-violet-500/25 flex items-center justify-center text-violet-400 group-hover:scale-105 transition-transform">
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <span
+                      className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border"
+                      style={{
+                        backgroundColor: 'var(--chip-bg)',
+                        borderColor: 'var(--chip-stroke)',
+                        color: 'var(--chip-text)',
+                      }}
+                    >
+                      {panel.tag}
+                    </span>
+                  </div>
+
+                  <h4
+                    className="text-sm font-bold group-hover:text-violet-400 transition-colors"
+                    style={{ color: 'var(--title-text)' }}
+                  >
+                    {panel.title}
+                  </h4>
+                  <p
+                    className="text-xs mt-1 leading-relaxed"
+                    style={{ color: 'var(--muted)' }}
+                  >
+                    {panel.desc}
+                  </p>
+                </div>
+
+                <div
+                  className="mt-4 pt-2.5 border-t flex items-center justify-between text-xs text-violet-400 font-semibold"
+                  style={{ borderColor: 'var(--divider)' }}
+                >
+                  <span>Open portal</span>
+                  <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Quick Services Section */}
+      <div>
+        <div className="flex items-center justify-between mb-2.5 px-0.5">
+          <h3
+            className="text-xs font-bold uppercase tracking-wider"
+            style={{ color: 'var(--muted)' }}
+          >
+            Quick Actions &amp; Community
+          </h3>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {quickActions.map((action) => {
+            const Icon = action.icon;
+            return (
+              <button
+                key={action.id}
+                onClick={() => onNavigate(action.url, action.title, action.id)}
+                className="p-3 rounded-xl border transition-all cursor-pointer text-left group hover:border-violet-500/40"
+                style={{
+                  backgroundColor: 'var(--panel)',
+                  borderColor: 'var(--line)',
+                }}
+              >
+                <Icon className="w-4 h-4 text-violet-400 mb-1.5 group-hover:scale-110 transition-transform" />
+                <span
+                  className="block text-xs font-bold truncate"
+                  style={{ color: 'var(--title-text)' }}
+                >
+                  {action.title}
+                </span>
+                <span
+                  className="block text-[10px] truncate mt-0.5"
+                  style={{ color: 'var(--faint)' }}
+                >
+                  {action.sub}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 };
