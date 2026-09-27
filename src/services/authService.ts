@@ -1,12 +1,12 @@
 /**
  * authService.ts
  *
- * Supabase-ready authentication service wrapper.
- * Currently uses local state and mock resolution with simulated network delay.
- * To integrate live Supabase: replace the mock implementations inside this file with
- * `supabase.auth.signInWithPassword`, `supabase.auth.signUp`, `supabase.auth.signOut`,
- * `supabase.auth.getSession`, and `supabase.auth.onAuthStateChange`.
+ * Production Supabase Authentication service for Victus Cloud.
+ * Connects directly to Supabase client using environment variables.
  */
+
+import { supabase } from './supabaseClient.ts';
+import type { User as SupabaseUser, Session as SupabaseSession } from '@supabase/supabase-js';
 
 export interface User {
   id: string;
@@ -32,7 +32,13 @@ export interface AuthError {
   status?: number;
 }
 
-export type AuthChangeEvent = 'SIGNED_IN' | 'SIGNED_OUT' | 'USER_UPDATED' | 'INITIAL_SESSION';
+export type AuthChangeEvent =
+  | 'SIGNED_IN'
+  | 'SIGNED_OUT'
+  | 'USER_UPDATED'
+  | 'INITIAL_SESSION'
+  | 'TOKEN_REFRESHED'
+  | 'PASSWORD_RECOVERY';
 
 export type AuthStateChangeCallback = (
   event: AuthChangeEvent,
@@ -41,48 +47,42 @@ export type AuthStateChangeCallback = (
 
 const AUTH_STORAGE_KEY = 'victus_auth_session';
 
-// In-memory subscribers for onAuthStateChange
-const listeners: Set<AuthStateChangeCallback> = new Set();
-
-function emitAuthChange(event: AuthChangeEvent, session: Session | null) {
-  listeners.forEach((callback) => {
-    try {
-      callback(event, session);
-    } catch (err) {
-      console.error('Error in auth state change listener:', err);
-    }
-  });
+function mapSupabaseUser(sbUser: SupabaseUser | null): User | null {
+  if (!sbUser) return null;
+  const email = sbUser.email || '';
+  const meta = sbUser.user_metadata || {};
+  return {
+    id: sbUser.id,
+    email,
+    user_metadata: {
+      name: meta.name || meta.full_name || (email ? email.split('@')[0] : 'User'),
+      avatar_url:
+        meta.avatar_url ||
+        `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(email || sbUser.id)}`,
+      role: meta.role || 'Member',
+    },
+    created_at: sbUser.created_at || new Date().toISOString(),
+  };
 }
 
-// Read stored session on boot
-export function getStoredSession(): Session | null {
-  try {
-    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (!raw) return null;
-    const session = JSON.parse(raw) as Session;
-    // Check if expired
-    if (!session || (session.expires_at && session.expires_at < Date.now())) {
-      localStorage.removeItem(AUTH_STORAGE_KEY);
-      return null;
-    }
-    // Guarantee session has a valid user object
-    if (!session.user || !session.user.email) {
-      session.user = {
-        id: session.user?.id || 'usr_admin_demo',
-        email: 'admin@victuscloud.com',
-        user_metadata: {
-          name: 'Victus Admin',
-          avatar_url: 'https://api.dicebear.com/7.x/bottts/svg?seed=admin@victuscloud.com',
-          role: 'Administrator',
-        },
-        created_at: new Date().toISOString(),
-      };
-      persistSession(session);
-    }
-    return session;
-  } catch {
-    return null;
-  }
+function mapSupabaseSession(sbSession: SupabaseSession | null): Session | null {
+  if (!sbSession || !sbSession.user) return null;
+  const user = mapSupabaseUser(sbSession.user);
+  if (!user) return null;
+
+  const expiresAtMs = sbSession.expires_at
+    ? sbSession.expires_at < 1e11
+      ? sbSession.expires_at * 1000
+      : sbSession.expires_at
+    : Date.now() + 3600 * 1000;
+
+  return {
+    access_token: sbSession.access_token,
+    token_type: sbSession.token_type || 'bearer',
+    expires_in: sbSession.expires_in || 3600,
+    expires_at: expiresAtMs,
+    user,
+  };
 }
 
 function persistSession(session: Session | null) {
@@ -97,20 +97,31 @@ function persistSession(session: Session | null) {
   }
 }
 
+export function getStoredSession(): Session | null {
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) return null;
+    const session = JSON.parse(raw) as Session;
+    if (!session || (session.expires_at && session.expires_at < Date.now())) {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      return null;
+    }
+    return session;
+  } catch {
+    return null;
+  }
+}
+
 export const authService = {
   /**
-   * Sign in with email and password
+   * Sign in with email and password via Supabase
    */
   async signIn(
     email: string,
     password: string
   ): Promise<{ user: User | null; session: Session | null; error: AuthError | null }> {
-    // Simulated network delay
-    await new Promise((resolve) => setTimeout(resolve, 600));
-
     const cleanEmail = email.trim().toLowerCase();
 
-    // Validation
     if (!cleanEmail || !cleanEmail.includes('@')) {
       return {
         user: null,
@@ -119,50 +130,51 @@ export const authService = {
       };
     }
 
-    if (!password || password.length < 6) {
+    if (!password) {
       return {
         user: null,
         session: null,
-        error: { message: 'Password must be at least 6 characters.', status: 400 },
+        error: { message: 'Please enter your password.', status: 400 },
       };
     }
 
-    // Mock successful authentication
-    const user: User = {
-      id: `usr_${Math.random().toString(36).substring(2, 10)}`,
-      email: cleanEmail,
-      user_metadata: {
-        name: cleanEmail.split('@')[0],
-        avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanEmail}`,
-        role: cleanEmail.includes('admin') ? 'Administrator' : 'Cloud Member',
-      },
-      created_at: new Date().toISOString(),
-    };
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password,
+      });
 
-    const session: Session = {
-      access_token: `mock_jwt_${Math.random().toString(36).substring(2)}`,
-      token_type: 'bearer',
-      expires_in: 3600 * 24 * 7, // 7 days
-      expires_at: Date.now() + 1000 * 3600 * 24 * 7,
-      user,
-    };
+      if (error) {
+        return {
+          user: null,
+          session: null,
+          error: { message: error.message, status: error.status },
+        };
+      }
 
-    persistSession(session);
-    emitAuthChange('SIGNED_IN', session);
+      const mappedSession = mapSupabaseSession(data.session);
+      const mappedUser = mapSupabaseUser(data.user);
+      persistSession(mappedSession);
 
-    return { user, session, error: null };
+      return { user: mappedUser, session: mappedSession, error: null };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Authentication failed';
+      return {
+        user: null,
+        session: null,
+        error: { message, status: 500 },
+      };
+    }
   },
 
   /**
-   * Sign up a new user with email and password
+   * Sign up a new user with email, password, and optional name via Supabase
    */
   async signUp(
     email: string,
     password: string,
     name?: string
   ): Promise<{ user: User | null; session: Session | null; error: AuthError | null }> {
-    await new Promise((resolve) => setTimeout(resolve, 600));
-
     const cleanEmail = email.trim().toLowerCase();
 
     if (!cleanEmail || !cleanEmail.includes('@')) {
@@ -181,55 +193,109 @@ export const authService = {
       };
     }
 
-    const user: User = {
-      id: `usr_${Math.random().toString(36).substring(2, 10)}`,
-      email: cleanEmail,
-      user_metadata: {
-        name: name?.trim() || cleanEmail.split('@')[0],
-        avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanEmail}`,
-        role: 'Cloud Member',
-      },
-      created_at: new Date().toISOString(),
-    };
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password,
+        options: {
+          data: {
+            name: name?.trim() || cleanEmail.split('@')[0],
+          },
+        },
+      });
 
-    const session: Session = {
-      access_token: `mock_jwt_${Math.random().toString(36).substring(2)}`,
-      token_type: 'bearer',
-      expires_in: 3600 * 24 * 7,
-      expires_at: Date.now() + 1000 * 3600 * 24 * 7,
-      user,
-    };
+      if (error) {
+        return {
+          user: null,
+          session: null,
+          error: { message: error.message, status: error.status },
+        };
+      }
 
-    persistSession(session);
-    emitAuthChange('SIGNED_IN', session);
+      const mappedSession = mapSupabaseSession(data.session);
+      const mappedUser = mapSupabaseUser(data.user);
+      if (mappedSession) {
+        persistSession(mappedSession);
+      }
 
-    return { user, session, error: null };
+      return { user: mappedUser, session: mappedSession, error: null };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Sign up failed';
+      return {
+        user: null,
+        session: null,
+        error: { message, status: 500 },
+      };
+    }
   },
 
   /**
-   * Sign out current user
+   * Sign out current user from Supabase
    */
   async signOut(): Promise<{ error: AuthError | null }> {
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    persistSession(null);
-    emitAuthChange('SIGNED_OUT', null);
-    return { error: null };
+    try {
+      const { error } = await supabase.auth.signOut();
+      persistSession(null);
+      if (error) {
+        return { error: { message: error.message, status: error.status } };
+      }
+      return { error: null };
+    } catch (err: unknown) {
+      persistSession(null);
+      const message = err instanceof Error ? err.message : 'Sign out failed';
+      return { error: { message, status: 500 } };
+    }
   },
 
   /**
-   * Retrieve current active session
+   * Retrieve active session from Supabase
    */
   async getSession(): Promise<{ session: Session | null; error: AuthError | null }> {
-    const session = getStoredSession();
-    return { session, error: null };
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) {
+        return { session: null, error: { message: error.message, status: error.status } };
+      }
+      const mapped = mapSupabaseSession(data.session);
+      persistSession(mapped);
+      return { session: mapped, error: null };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch session';
+      return { session: null, error: { message, status: 500 } };
+    }
   },
 
   /**
-   * Retrieve current user
+   * Retrieve current authenticated user from Supabase
    */
   async getUser(): Promise<{ user: User | null; error: AuthError | null }> {
-    const session = getStoredSession();
-    return { user: session ? session.user : null, error: null };
+    try {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) {
+        return { user: null, error: { message: error.message, status: error.status } };
+      }
+      const mapped = mapSupabaseUser(data.user);
+      return { user: mapped, error: null };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch user';
+      return { user: null, error: { message, status: 500 } };
+    }
+  },
+
+  /**
+   * Send password reset email
+   */
+  async resetPassword(email: string): Promise<{ error: AuthError | null }> {
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase());
+      if (error) {
+        return { error: { message: error.message, status: error.status } };
+      }
+      return { error: null };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Reset password failed';
+      return { error: { message, status: 500 } };
+    }
   },
 
   /**
@@ -240,17 +306,18 @@ export const authService = {
   },
 
   /**
-   * Listen to auth state transitions
+   * Listen to Supabase auth state transitions
    */
   onAuthStateChange(callback: AuthStateChangeCallback): { unsubscribe: () => void } {
-    listeners.add(callback);
-    // Emit initial session status immediately
-    const current = getStoredSession();
-    callback('INITIAL_SESSION', current);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, sbSession) => {
+      const mapped = mapSupabaseSession(sbSession);
+      persistSession(mapped);
+      callback(event as AuthChangeEvent, mapped);
+    });
 
     return {
       unsubscribe: () => {
-        listeners.delete(callback);
+        subscription.unsubscribe();
       },
     };
   },

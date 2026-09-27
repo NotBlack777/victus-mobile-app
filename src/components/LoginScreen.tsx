@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle, Sparkles, Shield, Zap } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle, Shield, Zap } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useToast } from './Toast.tsx';
 
 export const LoginScreen: React.FC = () => {
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, resetPassword } = useAuth();
   const { showToast } = useToast();
 
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
@@ -26,14 +26,14 @@ export const LoginScreen: React.FC = () => {
         if (error) {
           setErrorMessage(error.message);
         } else {
-          showToast(`Welcome back to Victus Cloud!`);
+          showToast(`Welcome to Victus Cloud!`);
         }
       } else {
         const { error } = await signUp(email, password, name);
         if (error) {
           setErrorMessage(error.message);
         } else {
-          showToast(`Account created! Welcome to Victus Cloud.`);
+          showToast(`Account created! Please check your email to confirm your account.`);
         }
       }
     } catch {
@@ -43,22 +43,18 @@ export const LoginScreen: React.FC = () => {
     }
   };
 
-  const handleQuickDemoLogin = async () => {
-    setEmail('admin@victuscloud.com');
-    setPassword('victus2026');
-    setErrorMessage(null);
+  const handleForgotPassword = async () => {
+    if (!email.trim() || !email.includes('@')) {
+      showToast('Please enter your email address first.');
+      return;
+    }
     setIsLoading(true);
-    try {
-      const { error } = await signIn('admin@victuscloud.com', 'victus2026');
-      if (error) {
-        setErrorMessage(error.message);
-      } else {
-        showToast('Logged in with Admin Demo account');
-      }
-    } catch {
-      setErrorMessage('Failed to sign in. Please try again.');
-    } finally {
-      setIsLoading(false);
+    const { error } = await resetPassword(email);
+    setIsLoading(false);
+    if (error) {
+      showToast(error.message);
+    } else {
+      showToast(`Password reset link sent to ${email}`);
     }
   };
 
@@ -94,33 +90,14 @@ export const LoginScreen: React.FC = () => {
           <div className="text-center mb-6">
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-violet-600/20 text-violet-300 border border-violet-500/30 mb-2.5">
               <Zap className="w-3 h-3 text-violet-400" />
-              <span>Sign in required</span>
+              <span>Authentication</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
               {mode === 'signin' ? 'Sign in to Victus Cloud' : 'Create an Account'}
             </h1>
             <p className="text-xs text-slate-400 mt-2 max-w-xs mx-auto leading-relaxed">
-              Access your game servers, virtual machines, and cloud billing.
+              Access your servers, infrastructure, and cloud billing.
             </p>
-          </div>
-
-          {/* Quick Demo Access Button */}
-          <button
-            type="button"
-            onClick={handleQuickDemoLogin}
-            disabled={isLoading}
-            className="w-full mb-5 py-2.5 px-4 rounded-xl border border-violet-500/40 bg-violet-950/30 hover:bg-violet-900/40 text-violet-200 font-semibold text-xs transition-all active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer shadow-sm group"
-          >
-            <Sparkles className="w-4 h-4 text-violet-400 group-hover:rotate-12 transition-transform" />
-            <span>Continue with Demo Account (admin@victuscloud.com)</span>
-          </button>
-
-          <div className="relative flex items-center justify-center mb-5">
-            <div className="border-t border-white/[0.08] w-full" />
-            <span className="bg-[#121219] px-3 text-[10px] uppercase font-bold text-slate-500 tracking-wider">
-              Or with credentials
-            </span>
-            <div className="border-t border-white/[0.08] w-full" />
           </div>
 
           {/* Error Message */}
@@ -142,7 +119,7 @@ export const LoginScreen: React.FC = () => {
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Alex Cloud"
+                  placeholder="Your Name"
                   disabled={isLoading}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#161622] border border-white/[0.08] text-white text-xs placeholder:text-slate-500 focus:outline-none focus:border-violet-500 transition-colors"
                 />
@@ -160,7 +137,7 @@ export const LoginScreen: React.FC = () => {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@victuscloud.com"
+                  placeholder="name@example.com"
                   disabled={isLoading}
                   className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-[#161622] border border-white/[0.08] text-white text-xs placeholder:text-slate-500 focus:outline-none focus:border-violet-500 transition-colors"
                 />
@@ -175,9 +152,7 @@ export const LoginScreen: React.FC = () => {
                 {mode === 'signin' && (
                   <button
                     type="button"
-                    onClick={() =>
-                      showToast('Use demo password: victus2026 or sign in with demo account')
-                    }
+                    onClick={handleForgotPassword}
                     className="text-[10px] text-violet-400 hover:text-violet-300 font-medium cursor-pointer"
                   >
                     Forgot password?
@@ -247,8 +222,8 @@ export const LoginScreen: React.FC = () => {
             <span>Game &amp; VPS Nodes</span>
           </div>
           <div className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
-            <span className="font-bold text-slate-400 block">DDoS Shield</span>
-            <span>Protected Network</span>
+            <span className="font-bold text-slate-400 block">Protected</span>
+            <span>Enterprise Security</span>
           </div>
           <div className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
             <span className="font-bold text-slate-400 block">24/7 Support</span>
