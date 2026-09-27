@@ -83,7 +83,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
       title: 'System Status',
       tag: 'UPTIME 99.9%',
       icon: Activity,
-      desc: 'Real-time telemetry, node cluster pings, incident logs, and DDoS mitigation status.',
+      desc: 'Real-time telemetry, node cluster pings, incident logs, and network uptime status.',
       url: 'https://victuscloud.com/status',
     },
   ];
@@ -179,7 +179,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
           className="mt-3 text-xs sm:text-sm leading-relaxed max-w-2xl"
           style={{ color: 'var(--muted)' }}
         >
-          Servers, billing, object drive, support, and cluster status unified in a native management shell powered by AMD Ryzen 9 7950X compute and 12Tbps Cosmic Guard DDoS filtering.
+          Servers, billing, object drive, support, and cluster status unified in a native mobile management shell for Victus Cloud infrastructure.
         </p>
 
         {/* Status Metric Strip */}
@@ -219,13 +219,13 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
               className="block text-xs sm:text-sm font-bold"
               style={{ color: 'var(--title-text)' }}
             >
-              Ryzen 9 7950X
+              Cloud Fleet
             </strong>
             <span
               className="block text-[10px] font-medium uppercase mt-0.5"
               style={{ color: 'var(--faint)' }}
             >
-              5.7GHz Node Power
+              High-Performance Nodes
             </span>
           </div>
 
@@ -240,13 +240,13 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
               className="block text-xs sm:text-sm font-bold"
               style={{ color: 'var(--title-text)' }}
             >
-              12Tbps Filter
+              Protected
             </strong>
             <span
               className="block text-[10px] font-medium uppercase mt-0.5"
               style={{ color: 'var(--faint)' }}
             >
-              Cosmic Guard DDoS
+              Active Network Shield
             </span>
           </div>
         </div>

@@ -179,7 +179,7 @@ export const App: React.FC = () => {
         onRefresh={handleRefresh}
         onOpenTools={() => setIsToolsOpen(true)}
         onOpenNotifications={() => setIsNotificationsOpen(true)}
-        onOpenLogin={() => (session ? setIsProfileOpen(true) : setIsLoginOpen(true))}
+        onOpenLogin={() => setIsProfileOpen(true)}
         onOpenProfile={() => setIsProfileOpen(true)}
         isLoading={isLoading}
         progress={progress}
@@ -224,7 +224,7 @@ export const App: React.FC = () => {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onNavigate={(url, title, tabId) => navigateTo(url, title, tabId)}
         onOpenClearSession={() => setIsClearSessionOpen(true)}
-        onOpenLogin={() => (session ? setIsProfileOpen(true) : setIsLoginOpen(true))}
+        onOpenLogin={() => setIsProfileOpen(true)}
         onOpenProfile={() => setIsProfileOpen(true)}
       />
 

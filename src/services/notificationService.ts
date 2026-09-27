@@ -39,8 +39,8 @@ const INITIAL_NOTIFICATIONS: InAppNotification[] = [
   },
   {
     id: 'notif_3',
-    title: 'Cosmic Guard Mitigation',
-    message: 'Cosmic Guard blocked a 420 Gbps SYN flood targeting port 25588 with 0 packet loss.',
+    title: 'Network Mitigation Active',
+    message: 'Automated network shield filtered an inbound traffic spike with 0 packet loss.',
     timestamp: '3h ago',
     type: 'system',
     read: true,
@@ -48,7 +48,7 @@ const INITIAL_NOTIFICATIONS: InAppNotification[] = [
   {
     id: 'notif_4',
     title: 'Invoice Paid: #INV-2026-442',
-    message: 'Automatic renewal for Ryzen 9 7950X - 16GB RAM node was processed successfully.',
+    message: 'Automatic renewal for Game Server 16GB RAM node was processed successfully.',
     timestamp: 'Yesterday',
     type: 'billing',
     read: true,

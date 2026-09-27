@@ -481,7 +481,7 @@ export const ControlDashboard: React.FC<ControlDashboardProps> = ({
         <div>
           <h4 className="text-xs font-bold text-white">Need more compute power?</h4>
           <p className="text-[11px] text-slate-400 mt-0.5">
-            Deploy instant Ryzen 9 7950X Minecraft nodes &amp; KVM VPS instances.
+            Deploy instant game server nodes &amp; KVM VPS instances.
           </p>
         </div>
         <button

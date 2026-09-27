@@ -42,8 +42,16 @@ export const TopBar: React.FC<TopBarProps> = ({
   const { user, signOut } = useAuth();
   const { unreadCount } = useNotifications();
 
+  // Log user state on render post-login
+  if (user) {
+    console.log('[TopBar] Rendered with active user:', user.email, 'id:', user.id);
+  } else {
+    console.log('[TopBar] Rendered in guest mode (no active user)');
+  }
+
   // Single Source of Truth Auth Check: Open account profile if authenticated, otherwise sign in
   const handleAvatarTap = () => {
+    console.log('[TopBar] handleAvatarTap invoked. user:', user?.email);
     if (user) {
       if (onOpenProfile) {
         onOpenProfile();

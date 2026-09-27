@@ -38,7 +38,7 @@ export const REAL_VICTUS_SERVICES: VictusService[] = [
     uuid: '9a4b12c1-3a1b-4cd3-84f9-71b8cd961001',
     memory: '8,192 MiB',
     disk: '50,000 MiB',
-    cpuCores: '4 Cores (Ryzen 9 7950X)',
+    cpuCores: '4 vCPU Cores',
     port: 25565,
   },
   {
@@ -55,7 +55,7 @@ export const REAL_VICTUS_SERVICES: VictusService[] = [
     uuid: '3f8e77a2-5b2c-4ef1-90a1-71b8cd961002',
     memory: '4,096 MiB',
     disk: '25,000 MiB',
-    cpuCores: '2 Cores (Ryzen 9 7950X)',
+    cpuCores: '2 vCPU Cores',
     port: 25566,
   },
   {
@@ -72,7 +72,7 @@ export const REAL_VICTUS_SERVICES: VictusService[] = [
     uuid: '2b1a90d4-1a3f-4cd2-b7a4-71b8cd961003',
     memory: '6,144 MiB',
     disk: '35,000 MiB',
-    cpuCores: '3 Cores (Ryzen 9 7950X)',
+    cpuCores: '3 vCPU Cores',
     port: 25570,
   },
   {
@@ -89,7 +89,7 @@ export const REAL_VICTUS_SERVICES: VictusService[] = [
     uuid: '5e6c41b8-8e9a-4bc4-93e2-71b8cd961004',
     memory: '2,048 MiB',
     disk: '10,000 MiB',
-    cpuCores: '2 Cores (Ryzen 9 7950X)',
+    cpuCores: '2 vCPU Cores',
     port: 25577,
   },
   {
@@ -106,7 +106,7 @@ export const REAL_VICTUS_SERVICES: VictusService[] = [
     uuid: '7d3a22f5-2d4e-4fa3-a8c1-71b8cd961005',
     memory: '1,024 MiB',
     disk: '5,000 MiB',
-    cpuCores: '1 Core (Ryzen 9 7950X)',
+    cpuCores: '1 vCPU Core',
     port: 8080,
   },
   {
@@ -123,7 +123,7 @@ export const REAL_VICTUS_SERVICES: VictusService[] = [
     uuid: '8c9b33e1-7b8c-4de2-bc91-71b8cd961006',
     memory: '2,048 MiB',
     disk: '12,000 MiB',
-    cpuCores: '2 Cores (Ryzen 9 7950X)',
+    cpuCores: '2 vCPU Cores',
     port: 2333,
   },
   {
@@ -140,7 +140,7 @@ export const REAL_VICTUS_SERVICES: VictusService[] = [
     uuid: '4f2e11d9-6a5b-4ef1-8e7c-71b8cd961007',
     memory: '1,024 MiB',
     disk: '5,000 MiB',
-    cpuCores: '1 Core (Ryzen 9 7950X)',
+    cpuCores: '1 vCPU Core',
     port: 3000,
   },
   {
@@ -157,7 +157,7 @@ export const REAL_VICTUS_SERVICES: VictusService[] = [
     uuid: '1a7c88b3-4f9e-4ad2-9b5e-71b8cd961008',
     memory: '4,096 MiB',
     disk: '20,000 MiB',
-    cpuCores: '2 Cores (Ryzen 9 7950X)',
+    cpuCores: '2 vCPU Cores',
     port: 25580,
   },
   {
@@ -174,7 +174,7 @@ export const REAL_VICTUS_SERVICES: VictusService[] = [
     uuid: '6d3b39e7-8cba-44fc-a8c5-71b8cd961678',
     memory: '4,096 MiB',
     disk: '40,000 MiB',
-    cpuCores: '3 Cores (Ryzen 9 7950X)',
+    cpuCores: '3 vCPU Cores',
     port: 25588,
   },
   {
@@ -191,7 +191,7 @@ export const REAL_VICTUS_SERVICES: VictusService[] = [
     uuid: '0e5d44a6-3c2b-4da1-a9e4-71b8cd961010',
     memory: '4,096 MiB',
     disk: '30,000 MiB',
-    cpuCores: '2 Cores (Ryzen 9 7950X)',
+    cpuCores: '2 vCPU Cores',
     port: 25590,
   },
   {

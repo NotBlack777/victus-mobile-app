@@ -13,15 +13,17 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // Synchronous initialization: reads stored session on immediate mount (no timing gap/race condition)
+  const [session, setSession] = useState<Session | null>(() => authService.getStoredSession());
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Single source of truth: user is strictly derived from session so they are NEVER desynced
+  const user: User | null = session?.user ?? null;
 
   useEffect(() => {
-    // Subscribe to auth state changes
+    // Subscribe to auth state transitions
     const { unsubscribe } = authService.onAuthStateChange((_event, currentSession) => {
       setSession(currentSession);
-      setUser(currentSession ? currentSession.user : null);
       setIsLoading(false);
     });
 
@@ -34,7 +36,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const res = await authService.signIn(email, pass);
     if (!res.error && res.session) {
       setSession(res.session);
-      setUser(res.user);
     }
     return { error: res.error };
   };
@@ -43,7 +44,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const res = await authService.signUp(email, pass, name);
     if (!res.error && res.session) {
       setSession(res.session);
-      setUser(res.user);
     }
     return { error: res.error };
   };
@@ -51,7 +51,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signOut = async () => {
     await authService.signOut();
     setSession(null);
-    setUser(null);
   };
 
   return (

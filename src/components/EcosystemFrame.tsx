@@ -65,11 +65,11 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
     { name: 'paper-world-nether.zip', size: '1.4 GB', modified: 'Yesterday', type: 'archive' },
     { name: 'server.properties', size: '4.2 KB', modified: '3 days ago', type: 'config' },
     { name: 'velocity.toml', size: '18.6 KB', modified: '4 days ago', type: 'config' },
-    { name: 'cosmic-guard-firewall-rules.json', size: '3.1 KB', modified: 'Last week', type: 'config' },
+    { name: 'firewall-rules.json', size: '3.1 KB', modified: 'Last week', type: 'config' },
   ]);
 
   const [supportTickets] = useState([
-    { id: '#VT-9821', subject: 'Node migration request to Singapore SG-1 (Ryzen 9 7950X)', status: 'In Review', dept: 'Infrastructure' },
+    { id: '#VT-9821', subject: 'Node migration request to Singapore SG-1', status: 'In Review', dept: 'Infrastructure' },
     { id: '#VT-9804', subject: 'Billing invoice query for KVM VPS Instance', status: 'Answered', dept: 'Billing' },
     { id: '#VT-9772', subject: 'Custom domain DNS and SRV record verification for survival.victusmc.net', status: 'Resolved', dept: 'Networking' },
   ]);
@@ -258,7 +258,7 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
                 </h4>
                 <div className="space-y-2">
                   {[
-                    { id: '#INV-2026-442', item: 'Ryzen 9 7950X - 16GB RAM Node', amount: '$18.00', status: 'PAID' },
+                    { id: '#INV-2026-442', item: 'Game Server - 16GB RAM Node', amount: '$18.00', status: 'PAID' },
                     { id: '#INV-2026-419', item: 'Victus Drive S3 Storage (100GB)', amount: '$5.00', status: 'PAID' },
                     { id: '#INV-2026-388', item: 'KVM VPS 4-Core Cloud Instance', amount: '$24.00', status: 'PAID' },
                   ].map((inv) => (
@@ -416,7 +416,7 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
                   <div>
                     <h3 className="font-bold text-base text-white">All Systems Operational</h3>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      Global Cluster Uptime: 99.98% • DDoS Filtering: Active (12Tbps Cosmic Guard)
+                      Global Cluster Uptime: 99.98% • Network Mitigation: Active
                     </p>
                   </div>
                 </div>
@@ -424,9 +424,9 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
 
               <div className="p-4 rounded-xl border border-white/[0.08] bg-[#14141c] shadow-sm space-y-2">
                 {[
-                  { name: 'Virginia US-East Node Cluster (Ryzen 9 7950X)', ping: '12ms', status: 'Operational' },
-                  { name: 'Frankfurt EU-Central Node Cluster (Ryzen 9 7950X)', ping: '38ms', status: 'Operational' },
-                  { name: 'Singapore SG-1 Node Cluster (Ryzen 9 7950X)', ping: '8ms', status: 'Operational' },
+                  { name: 'Virginia US-East Node Cluster', ping: '12ms', status: 'Operational' },
+                  { name: 'Frankfurt EU-Central Node Cluster', ping: '38ms', status: 'Operational' },
+                  { name: 'Singapore SG-1 Node Cluster', ping: '8ms', status: 'Operational' },
                   { name: 'Billing Engine (billing.victuscloud.com)', ping: '15ms', status: 'Operational' },
                   { name: 'Pterodactyl Wings (control.victuscloud.com)', ping: '11ms', status: 'Operational' },
                 ].map((node, i) => (
@@ -459,20 +459,20 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
                   High-Performance Game Server &amp; Cloud Infrastructure
                 </h3>
                 <p className="text-xs sm:text-sm text-slate-400 mt-1.5 leading-relaxed">
-                  Powered by AMD Ryzen 9 7950X processors, DDR5 memory, PCIe 4.0 NVMe storage, and 12Tbps Cosmic Guard DDoS protection.
+                  Powered by enterprise cloud hardware, NVMe storage, high-speed networking, and automated DDoS mitigation.
                 </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 <div className="p-4 rounded-xl border border-white/[0.08] bg-[#14141c]">
                   <Cpu className="w-4 h-4 mb-2 text-violet-400" />
-                  <h4 className="font-bold text-xs text-white">Ryzen 9 7950X</h4>
-                  <p className="text-[11px] text-slate-400 mt-1">5.7GHz single-core turbo clock speed for stutter-free gameplay.</p>
+                  <h4 className="font-bold text-xs text-white">Compute Nodes</h4>
+                  <p className="text-[11px] text-slate-400 mt-1">High-performance dedicated and shared compute for game and VPS workloads.</p>
                 </div>
                 <div className="p-4 rounded-xl border border-white/[0.08] bg-[#14141c]">
                   <ShieldCheck className="w-4 h-4 mb-2 text-emerald-400" />
-                  <h4 className="font-bold text-xs text-white">12Tbps Cosmic Guard</h4>
-                  <p className="text-[11px] text-slate-400 mt-1">Always-on Layer 3/4/7 DDoS mitigation keeps players connected.</p>
+                  <h4 className="font-bold text-xs text-white">DDoS Protection</h4>
+                  <p className="text-[11px] text-slate-400 mt-1">Automated network protection keeps your servers online and accessible.</p>
                 </div>
                 <div className="p-4 rounded-xl border border-white/[0.08] bg-[#14141c]">
                   <Globe2 className="w-4 h-4 mb-2 text-sky-400" />

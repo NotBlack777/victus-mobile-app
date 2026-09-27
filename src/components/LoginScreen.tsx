@@ -100,7 +100,7 @@ export const LoginScreen: React.FC = () => {
               {mode === 'signin' ? 'Sign in to Victus Cloud' : 'Create an Account'}
             </h1>
             <p className="text-xs text-slate-400 mt-2 max-w-xs mx-auto leading-relaxed">
-              Access your Ryzen 9 7950X game servers, KVM virtual machines, and cloud billing.
+              Access your game servers, virtual machines, and cloud billing.
             </p>
           </div>
 
@@ -243,12 +243,12 @@ export const LoginScreen: React.FC = () => {
         {/* Feature Highlights beneath */}
         <div className="mt-6 grid grid-cols-3 gap-2 text-center text-[10px] text-slate-500">
           <div className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
-            <span className="font-bold text-slate-400 block">7950X Nodes</span>
-            <span>5.7 GHz single core</span>
+            <span className="font-bold text-slate-400 block">Cloud Fleet</span>
+            <span>Game &amp; VPS Nodes</span>
           </div>
           <div className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
             <span className="font-bold text-slate-400 block">DDoS Shield</span>
-            <span>12Tbps Cosmic Guard</span>
+            <span>Protected Network</span>
           </div>
           <div className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
             <span className="font-bold text-slate-400 block">24/7 Support</span>
