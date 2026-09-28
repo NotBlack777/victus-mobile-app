@@ -7,7 +7,6 @@ import {
   Menu,
   Bell,
   LogOut,
-  LogIn,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
@@ -19,8 +18,7 @@ interface TopBarProps {
   onRefresh: () => void;
   onOpenTools: () => void;
   onOpenNotifications: () => void;
-  onOpenLogin: () => void;
-  onOpenProfile?: () => void;
+  onOpenProfile: () => void;
   isLoading: boolean;
   progress: number;
   currentTitle?: string;
@@ -32,7 +30,6 @@ export const TopBar: React.FC<TopBarProps> = ({
   onRefresh,
   onOpenTools,
   onOpenNotifications,
-  onOpenLogin,
   onOpenProfile,
   isLoading,
   progress,
@@ -42,29 +39,15 @@ export const TopBar: React.FC<TopBarProps> = ({
   const { user, signOut } = useAuth();
   const { unreadCount } = useNotifications();
 
-  // Log user state on render post-login
-  if (user) {
-    console.log('[TopBar] Rendered with active user:', user.email, 'id:', user.id);
-  } else {
-    console.log('[TopBar] Rendered in guest mode (no active user)');
-  }
-
-  // Single Source of Truth Auth Check: Open account profile if authenticated, otherwise sign in
+  // Single Source of Truth Auth Check: Open account profile if authenticated
   const handleAvatarTap = () => {
-    console.log('[TopBar] handleAvatarTap invoked. user:', user?.email);
     if (user) {
-      if (onOpenProfile) {
-        onOpenProfile();
-      } else {
-        onOpenLogin();
-      }
-    } else {
-      onOpenLogin();
+      onOpenProfile();
     }
   };
 
   return (
-    <header className="sticky top-0 z-40 w-full select-none">
+    <header className="app-chrome pt-safe w-full select-none">
       {/* Top bar surface matching control.victuscloud.com header */}
       <div
         className="w-full flex items-center justify-between px-2.5 sm:px-4 py-2 border-b backdrop-blur-md transition-colors duration-200"
@@ -148,13 +131,11 @@ export const TopBar: React.FC<TopBarProps> = ({
             )}
           </button>
 
-          {/* Dynamic Auth State: Authenticated Avatar with Online Presence vs. Guest Log In Button */}
+          {/* Dynamic Auth State: Authenticated Avatar with Online Presence */}
           {user ? (
             <div className="flex items-center gap-1">
               <button
                 onClick={handleAvatarTap}
-                title={`Signed in as ${user.email} (View Profile)`}
-                aria-label={`Signed in as ${user.email} - View Account Profile`}
                 className="relative w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl border border-violet-500/40 bg-violet-600/20 hover:border-violet-400 active:scale-95 transition-all cursor-pointer flex items-center justify-center p-0.5 shadow-xs"
               >
                 <div className="w-full h-full rounded-[10px] overflow-hidden flex items-center justify-center bg-gradient-to-tr from-violet-700/60 to-indigo-600/60">
@@ -187,17 +168,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                 <LogOut className="w-3.5 h-3.5" />
               </button>
             </div>
-          ) : (
-            <button
-              onClick={onOpenLogin}
-              title="Guest Mode — Sign in to Victus"
-              aria-label="Sign in to your Victus account"
-              className="h-8.5 sm:h-9 px-2.5 sm:px-3 rounded-xl border border-violet-500/35 bg-violet-600/15 hover:bg-violet-600/25 active:scale-95 transition-all text-violet-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
-            >
-              <LogIn className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
-              <span className="tracking-tight whitespace-nowrap">Sign In</span>
-            </button>
-          )}
+          ) : null}
 
           {/* Light/Dark Toggle */}
           <button

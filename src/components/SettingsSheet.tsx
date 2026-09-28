@@ -75,12 +75,12 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({ isOpen, onClose })
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 backdrop-blur-xs animate-in fade-in duration-200"
+      className="absolute inset-0 z-modal flex items-end justify-center bg-black/75 backdrop-blur-xs animate-in fade-in duration-200"
       onClick={onClose}
     >
       {/* Bottom Sheet Modal matching Screenshot_20260927-174956.png */}
       <div
-        className="w-full max-w-lg rounded-t-3xl p-6 sm:p-7 border-t border-x border-white/[0.08] text-white overflow-y-auto max-h-[92vh] shadow-2xl select-none animate-in slide-in-from-bottom duration-200"
+        className="w-full max-w-full rounded-t-3xl p-6 border-t border-x border-white/[0.08] text-white overflow-y-auto max-h-[90%] shadow-2xl select-none animate-in slide-in-from-bottom duration-200"
         style={{
           backgroundColor: 'var(--sheet-bg)',
           borderColor: 'var(--sheet-stroke)',
@@ -371,7 +371,7 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({ isOpen, onClose })
       {/* Color picker popup modal */}
       {activePickerTarget && (
         <div
-          className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-in zoom-in-95 duration-150"
+          className="absolute inset-0 z-10 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-in zoom-in-95 duration-150"
           onClick={() => setActivePickerTarget(null)}
         >
           <div

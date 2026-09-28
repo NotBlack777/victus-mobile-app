@@ -19,6 +19,7 @@ import { useTheme } from '../context/ThemeContext.tsx';
 import { openVictusLink } from '../utils/navigation.ts';
 
 interface ControlDashboardProps {
+  services?: VictusService[];
   onSelectService: (service: VictusService) => void;
   onNavigateTab?: (url: string, title?: string, tabId?: string) => void;
 }
@@ -26,12 +27,12 @@ interface ControlDashboardProps {
 type FilterTab = 'all' | 'game' | 'vps';
 
 export const ControlDashboard: React.FC<ControlDashboardProps> = ({
+  services = REAL_VICTUS_SERVICES,
   onSelectService,
   onNavigateTab,
 }) => {
   const { showToast } = useToast();
   const { config } = useTheme();
-  const [services] = useState<VictusService[]>(REAL_VICTUS_SERVICES);
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -59,7 +60,7 @@ export const ControlDashboard: React.FC<ControlDashboardProps> = ({
   }, [services, activeFilter, searchQuery]);
 
   return (
-    <div className="w-full max-w-[64rem] mx-auto px-3 sm:px-6 py-4 pb-28 space-y-4 animate-in fade-in duration-200 select-none">
+    <div className="w-full px-3 py-4 pb-28 space-y-4 animate-in fade-in duration-200 select-none">
       {/* ======================================================== */}
       {/* 1. FLEET OVERVIEW HERO (Strict match to Screenshot) */}
       {/* ======================================================== */}
@@ -408,6 +409,12 @@ export const ControlDashboard: React.FC<ControlDashboardProps> = ({
                 <div
                   key={srv.id}
                   onClick={() => onSelectService(srv)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onSelectService(srv);
+                    }
+                  }}
                   role="button"
                   tabIndex={0}
                   className="group relative rounded-xl p-3 sm:p-3.5 border border-white/[0.08] bg-[#14141c] hover:bg-[#171722] hover:border-violet-500/30 transition-all cursor-pointer flex items-center justify-between gap-3 overflow-hidden shadow-xs active:scale-[0.99]"

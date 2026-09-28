@@ -14,6 +14,8 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { VictusService } from '../services/controlData.ts';
+
+type ServiceStatus = VictusService['status'];
 import { useToast } from './Toast.tsx';
 import { useTheme } from '../context/ThemeContext.tsx';
 import { openVictusLink } from '../utils/navigation.ts';
@@ -21,7 +23,7 @@ import { openVictusLink } from '../utils/navigation.ts';
 interface ServiceControlScreenProps {
   service: VictusService;
   onBack: () => void;
-  onUpdateServiceStatus?: (serviceId: string, status: 'ACTIVE' | 'OFFLINE') => void;
+  onUpdateServiceStatus?: (serviceId: string, status: ServiceStatus) => void;
 }
 
 export const ServiceControlScreen: React.FC<ServiceControlScreenProps> = ({
@@ -120,7 +122,7 @@ export const ServiceControlScreen: React.FC<ServiceControlScreenProps> = ({
   const isOnline = powerState === 'running';
 
   return (
-    <div className="w-full max-w-[64rem] mx-auto px-3 sm:px-6 py-4 pb-28 space-y-3.5 animate-in fade-in duration-200 select-none">
+    <div className="w-full px-3 py-4 pb-28 space-y-3.5 animate-in fade-in duration-200 select-none">
       {/* Return to Dashboard Header */}
       <div className="flex items-center justify-between p-3 rounded-xl border border-white/[0.08] bg-[#14141c]">
         <button
@@ -328,7 +330,7 @@ export const ServiceControlScreen: React.FC<ServiceControlScreenProps> = ({
       </div>
 
       {/* 2. Resource Usage Cards (Distinct Colors: CPU = Purple, RAM = Green, Disk = Blue) */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+      <div className="grid grid-cols-3 gap-2">
         {/* CPU Card */}
         <div className="p-4 rounded-xl border border-white/[0.08] bg-[#14141c] shadow-sm">
           <div className="flex items-center justify-between mb-1.5">

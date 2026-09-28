@@ -2,6 +2,46 @@ plugins {
     id 'com.android.application'
 }
 
+// ============================================================================
+// Release signing
+// ============================================================================
+// Every build has to carry the *same* signature. Android refuses to install an
+// APK whose signer differs from the installed copy (INSTALL_FAILED_UPDATE_
+// INCOMPATIBLE), and UpdateInstaller.requireSameSigner() rejects it as well —
+// so a build-to-build signature change silently breaks both manual upgrades and
+// the in-app updater.
+//
+// GitHub's hosted runners regenerate ~/.android/debug.keystore on every run, so
+// CI builds were signed with a fresh random key each time. Credentials now come
+// from the environment (CI secrets) or keystore.properties (local, git-ignored).
+// When neither is present the build still succeeds on the standard debug key,
+// so forks and pull requests keep working.
+
+def signingProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { signingProperties.load(it) }
+}
+
+def signingValue = { String envName, String propertyName ->
+    String fromEnv = System.getenv(envName)
+    if (fromEnv != null && !fromEnv.trim().isEmpty()) return fromEnv.trim()
+    String fromProperties = signingProperties.getProperty(propertyName)
+    if (fromProperties != null && !fromProperties.trim().isEmpty()) return fromProperties.trim()
+    return null
+}
+
+def signingKeystorePath = signingValue('VICTUS_KEYSTORE_FILE', 'storeFile')
+def signingKeystoreFile = signingKeystorePath ? rootProject.file(signingKeystorePath) : null
+// Only treat the keystore as usable when the file is really there *and* the
+// passwords resolve, so a half-configured environment degrades to debug
+// signing instead of failing the build with a confusing parse error.
+def hasReleaseSigning = signingKeystoreFile != null
+        && signingKeystoreFile.exists()
+        && signingValue('VICTUS_STORE_PASSWORD', 'storePassword') != null
+        && signingValue('VICTUS_KEY_ALIAS', 'keyAlias') != null
+        && signingValue('VICTUS_KEY_PASSWORD', 'keyPassword') != null
+
 android {
     namespace 'com.victuscloud.ecosystem'
     // Current stable Android API level (Android 15). Edge-to-edge is enforced at 35+,
@@ -10,29 +50,61 @@ android {
 
     defaultConfig {
         applicationId 'com.victuscloud.ecosystem'
-        // API 23 covers mdpi..xxxhdpi and every refresh-rate API we need.
-        minSdk 23
+        // API 24 (Android 7.0). Raised from 23 because the Shizuku API used by the
+        // in-app updater declares minSdk 24; forcing it onto 23 via
+        // tools:overrideLibrary would risk NoClassDefFoundError crashes on
+        // Android 6.0 instead of a clean "unsupported" path.
+        minSdk 24
         targetSdk 35
         versionCode 22
         versionName '2.1.1'
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile signingKeystoreFile
+                storePassword signingValue('VICTUS_STORE_PASSWORD', 'storePassword')
+                keyAlias signingValue('VICTUS_KEY_ALIAS', 'keyAlias')
+                keyPassword signingValue('VICTUS_KEY_PASSWORD', 'keyPassword')
+                // v1 + v2 so the APK installs on every supported API level.
+                v1SigningEnabled true
+                v2SigningEnabled true
+            }
+        }
+    }
+
     buildTypes {
         debug {
             // Debug builds keep the original applicationId so the phone-only
-            // workflow produces an installable update path for testers.
+            // workflow produces an installable update path for testers, and
+            // carry the release signature so they upgrade each other in place.
             minifyEnabled false
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
         }
         release {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+        // Shizuku API 13.1 requires core library desugaring at minSdk 23.
+        coreLibraryDesugaringEnabled true
+    }
+
+    buildFeatures {
+        // AIDL is used by the privileged install service (IUpdateService), which
+        // Shizuku runs as the shell/root identity for in-app updates.
+        aidl true
     }
 }
 
@@ -45,4 +117,72 @@ dependencies {
     // WebViewAssetLoader + WebSettingsCompat: current replacements for file:// hacks
     // and deprecated WebSettings flags.
     implementation 'androidx.webkit:webkit:1.12.1'
+
+    // In-app updater — Shizuku installs the update as the ADB/shell identity (or
+    // root, when Sui/root is available) without any user-facing install prompt.
+    implementation 'dev.rikka.shizuku:api:13.1.5'
+    implementation 'dev.rikka.shizuku:provider:13.1.5'
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
+
+    // Plain JVM tests for the updater's pure logic (manifest parsing, version
+    // comparison, install-command construction). org.json comes from the Android
+    // SDK at runtime, so the real implementation is supplied for the test JVM.
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
+}
+
+// ============================================================================
+// Bundled React application
+// ============================================================================
+// The APK ships the real React app (src/, built by Vite into dist/) as APK
+// assets instead of the legacy hand-written home.html. MainActivity loads
+// https://appassets.androidplatform.net/index.html and the whole asset tree is
+// served from that domain root, so Vite's absolute /assets/*, /icons/* and
+// /manifest.webmanifest URLs resolve without any bundler base-path override.
+
+final reactDistDir = rootProject.layout.projectDirectory.dir('dist')
+def stagedReactAssetsDir = layout.buildDirectory.dir('generated/reactAssets')
+
+// 1. Build the web app with the project's own package manager (bun.lock + the
+//    `build` script in package.json: tsc -b && vite build).
+def buildReactApp = tasks.register('buildReactApp', Exec) {
+    group = 'build'
+    description = 'Builds the React web app into dist/ (`bun run build`).'
+    workingDir rootProject.projectDir
+    commandLine 'bun', 'run', 'build'
+    inputs.files(
+            fileTree(new File(rootProject.projectDir, 'src')),
+            fileTree(new File(rootProject.projectDir, 'public')),
+            new File(rootProject.projectDir, 'index.html'),
+            new File(rootProject.projectDir, 'package.json'),
+            new File(rootProject.projectDir, 'vite.config.ts'),
+            new File(rootProject.projectDir, 'tsconfig.json')
+    ).withPropertyName('reactSources')
+    outputs.dir(reactDistDir).withPropertyName('reactDist')
+}
+
+// 2. Stage it as APK assets. Sync (not Copy) so hashed bundles from an older
+//    Vite build are removed instead of accumulating in the APK.
+def bundleReactApp = tasks.register('bundleReactApp', Sync) {
+    group = 'build'
+    description = 'Stages the built React app as APK assets.'
+    dependsOn buildReactApp
+    from reactDistDir
+    into stagedReactAssetsDir
+    doFirst {
+        File entry = new File(reactDistDir.asFile, 'index.html')
+        if (!entry.exists()) {
+            throw new GradleException(
+                    "React build output is missing: ${entry}\n" +
+                    "Run `bun install` then `bun run build` (the buildReactApp task does this automatically).")
+        }
+    }
+}
+
+// 3. Feed the staged directory into the APK asset merge for every variant.
+android.sourceSets.main.assets.srcDirs += stagedReactAssetsDir
+tasks.matching {
+    it.name == 'preBuild' || (it.name.startsWith('merge') && it.name.endsWith('Assets'))
+}.configureEach {
+    dependsOn bundleReactApp
 }

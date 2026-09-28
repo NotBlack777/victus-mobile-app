@@ -15,6 +15,7 @@ import {
   X,
   MessageSquare,
   LogOut,
+  Trash2,
   User as UserIcon,
 } from 'lucide-react';
 import { useToast } from './Toast.tsx';
@@ -39,7 +40,7 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
   currentUrl,
   onOpenSettings,
   onNavigate,
-  onOpenClearSession: _onOpenClearSession,
+  onOpenClearSession,
   onOpenLogin,
   onOpenProfile,
 }) => {
@@ -73,7 +74,7 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex bg-black/75 backdrop-blur-xs animate-in fade-in duration-200 select-none"
+      className="absolute inset-0 z-modal flex bg-black/75 backdrop-blur-xs animate-in fade-in duration-200 select-none"
       onClick={onClose}
     >
       {/* Sidebar drawer sliding from left matching reference screenshots */}
@@ -359,6 +360,20 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
               <Shield className="w-3.5 h-3.5" />
             </div>
             <span className="text-xs font-semibold">Admin Area</span>
+          </button>
+
+          {/* Clear local app session / cached storage */}
+          <button
+            onClick={() => {
+              onClose();
+              onOpenClearSession();
+            }}
+            className="w-full min-h-[38px] px-3 rounded-lg flex items-center gap-3 hover:bg-rose-500/10 text-slate-300 hover:text-rose-300 transition-colors cursor-pointer text-left"
+          >
+            <div className="w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Trash2 className="w-4 h-4 text-rose-400/80" />
+            </div>
+            <span className="text-xs font-semibold">Clear App Session</span>
           </button>
 
           {/* Explicit Logout Option */}

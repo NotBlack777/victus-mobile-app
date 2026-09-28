@@ -63,7 +63,13 @@ function getStoredNotifications(): InAppNotification[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return INITIAL_NOTIFICATIONS;
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      // Corrupt or unexpected data: reset to defaults instead of crashing the UI
+      localStorage.removeItem(STORAGE_KEY);
+      return INITIAL_NOTIFICATIONS;
+    }
+    return parsed as InAppNotification[];
   } catch {
     return INITIAL_NOTIFICATIONS;
   }
@@ -113,6 +119,17 @@ export const notificationService = {
   subscribe(callback: NotificationListener): () => void {
     listeners.add(callback);
     callback(getStoredNotifications());
-    return () => listeners.delete(callback);
+
+    // Cross-tab sync via the storage event
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key !== STORAGE_KEY) return;
+      callback(getStoredNotifications());
+    };
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      listeners.delete(callback);
+      window.removeEventListener('storage', handleStorage);
+    };
   },
 };

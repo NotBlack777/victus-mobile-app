@@ -53,11 +53,11 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-end sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+      className="absolute inset-0 z-modal flex items-start justify-end bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
       onClick={onClose}
     >
       <div
-        className="w-full sm:max-w-sm sm:rounded-2xl border-b sm:border border-white/[0.08] bg-[#111117] text-white shadow-2xl overflow-hidden flex flex-col max-h-[85vh] sm:mt-12 sm:mr-2 animate-in slide-in-from-top-2 duration-150 select-none"
+        className="w-full max-w-sm rounded-2xl border border-white/[0.08] bg-[#111117] text-white shadow-2xl overflow-hidden flex flex-col max-h-[80%] mt-14 mr-2 animate-in slide-in-from-top-2 duration-150 select-none"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -113,7 +113,7 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({
               <div
                 key={notif.id}
                 onClick={() => handleItemClick(notif)}
-                className={`p-3.5 sm:p-4 flex items-start gap-3 transition-colors cursor-pointer hover:bg-white/[0.03] ${
+                className={`group p-3.5 sm:p-4 flex items-start gap-3 transition-colors cursor-pointer hover:bg-white/[0.03] ${
                   notif.read ? 'opacity-70 bg-transparent' : 'bg-violet-950/20'
                 }`}
               >
@@ -145,14 +145,15 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({
                   )}
                 </div>
 
-                {/* Delete button */}
+                {/* Delete button: visible on touch devices, revealed on hover on desktop */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     deleteNotification(notif.id);
                   }}
                   title="Dismiss notification"
-                  className="p-1 rounded text-slate-500 hover:text-rose-400 transition-colors opacity-0 hover:opacity-100 focus:opacity-100 group-hover:opacity-100"
+                  aria-label={`Dismiss ${notif.title}`}
+                  className="p-1 rounded text-slate-500 hover:text-rose-400 transition-colors sm:opacity-0 sm:focus:opacity-100 sm:group-hover:opacity-100"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>

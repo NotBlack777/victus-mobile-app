@@ -73,7 +73,9 @@ public class MainActivity extends ComponentActivity {
     /** Origin that serves the bundled assets over https (no file:// needed). */
     private static final String ASSETS_ORIGIN = "https://appassets.androidplatform.net";
     private static final String ASSETS_HOST = "appassets.androidplatform.net";
-    private static final String HOME_URL = ASSETS_ORIGIN + "/assets/home.html";
+    /** Entry point of the bundled React app (staged into the APK assets at build
+     *  time by the `bundleReactApp` Gradle task). */
+    private static final String HOME_URL = ASSETS_ORIGIN + "/index.html";
 
     private static final int TAB_HOME = 0;
     private static final String[] DOCK_URLS = {
@@ -556,7 +558,7 @@ public class MainActivity extends ComponentActivity {
         s.setAllowFileAccess(false);     // asset loader serves local content instead
         s.setAllowContentAccess(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        s.setCacheMode(WebSettings.LOAD_DEFAULT); // home.html stays cached → instant revisit
+        s.setCacheMode(WebSettings.LOAD_DEFAULT); // bundled React entry point stays cached → instant revisit
 
         // Ensure modern browser user-agent: remove the "; wv" token so Cloudflare and
         // modern web applications treat the embedded WebView as a standard Chrome mobile browser.
@@ -576,7 +578,11 @@ public class MainActivity extends ComponentActivity {
 
         assetLoader = new WebViewAssetLoader.Builder()
                 .setDomain("appassets.androidplatform.net")
-                .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
+                // The React build is staged at the assets root, so serve the whole
+                // tree from the domain root. That keeps Vite's absolute URLs
+                // (/index.html, /assets/index-*.js, /icons/*, /manifest.webmanifest)
+                // resolving to the matching APK asset with no rewrite step.
+                .addPathHandler("/", new WebViewAssetLoader.AssetsPathHandler(this))
                 .build();
 
         webView.setWebViewClient(new VictusWebViewClient(this, assetLoader));
@@ -601,7 +607,7 @@ public class MainActivity extends ComponentActivity {
         backButton.setEnabled(webView != null && webView.canGoBack());
         backButton.setAlpha(backButton.isEnabled() ? 1f : 0.38f);
         selectDock(indexForUrl(url), false);
-        injectThemeIntoWebView(); // keep home.html in sync with the saved theme
+        injectThemeIntoWebView(); // seed the saved accent theme before the page reads it
     }
 
     void onPageProgress(int newProgress) {
@@ -621,6 +627,7 @@ public class MainActivity extends ComponentActivity {
                 getString(R.string.tools_support),
                 getString(R.string.tools_status),
                 getString(R.string.tools_marketplace),
+                getString(R.string.tools_check_updates),
                 getString(R.string.tools_clear_session),
         };
         new AlertDialog.Builder(this)
@@ -671,6 +678,9 @@ public class MainActivity extends ComponentActivity {
                 loadUrlInternal("https://victuscloud.com/marketplace");
                 break;
             case 8:
+                UpdateSheet.show(this);
+                break;
+            case 9:
                 confirmClearSession();
                 break;
         }
@@ -880,9 +890,10 @@ public class MainActivity extends ComponentActivity {
         injectThemeIntoWebView();
     }
 
-    /** Pushes the live accent gradient + reduce-motion flag into home.html as CSS
-     *  custom properties. Only runs against our own bundled asset origin — a
-     *  no-op (and harmless either way) on every other site in the WebView. */
+    /** Pushes the live accent gradient + reduce-motion flag into the bundled React
+     *  app as CSS custom properties. Only runs against our own bundled asset origin —
+     *  a no-op (and harmless either way) on every other site in the WebView. The app
+     *  re-applies its own saved theme on mount, so this only sets the initial value. */
     private void injectThemeIntoWebView() {
         if (webView == null) return;
         String url = webView.getUrl();

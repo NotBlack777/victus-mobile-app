@@ -2,16 +2,49 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
     <meta name="color-scheme" content="light dark" />
+
+    <!-- Mobile app / PWA identity -->
+    <meta name="theme-color" content="#0a0a0f" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Victus" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+
     <title>Victus Cloud</title>
-    <meta name="description" content="Unified mobile ecosystem web app for Victus Cloud — website, billing, server control panel, drive storage, support hub, and system status with customizable appearance and themes." />
+    <meta
+      name="description"
+      content="Victus Cloud mobile app — website, billing, server control panel, drive storage, support hub, and system status with customizable appearance and themes."
+    />
     <meta property="og:title" content="Victus Cloud" />
-    <meta property="og:description" content="Unified mobile ecosystem web app for Victus Cloud — website, billing, server control panel, drive storage, support hub, and system status with customizable appearance and themes." />
-    <link rel="icon" type="image/png" href="/victus-logo.png" />
+    <meta
+      property="og:description"
+      content="Victus Cloud mobile app — servers, billing, drive, support and status in one app."
+    />
+    <link rel="icon" type="image/png" href="/victus-logo-fav.png" />
   </head>
   <body class="min-h-screen">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Register the service worker for installable, offline-capable app behavior.
+      // Skipped inside the Android WebView shell: its assets are bundled in the APK,
+      // and a cached service worker there would keep serving a stale shell after an
+      // app update.
+      const isAndroidShell = location.hostname === 'appassets.androidplatform.net';
+      if ('serviceWorker' in navigator && location.protocol === 'https:' && !isAndroidShell) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(() => {
+            /* offline support is best-effort */
+          });
+        });
+      }
+    </script>
   </body>
 </html>

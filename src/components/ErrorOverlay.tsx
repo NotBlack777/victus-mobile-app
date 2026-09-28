@@ -22,7 +22,7 @@ export const ErrorOverlay: React.FC<ErrorOverlayProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-in fade-in duration-200 select-none">
+    <div className="absolute inset-0 z-modal flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-in fade-in duration-200 select-none">
       <div className="w-full max-w-sm rounded-xl p-5 border border-white/[0.08] bg-[#14141c] text-white text-center shadow-2xl relative">
         {/* "!" accent circle glyph */}
         <div className="w-12 h-12 rounded-xl mx-auto mb-3.5 bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 text-xl font-black">

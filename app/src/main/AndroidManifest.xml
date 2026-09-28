@@ -9,6 +9,10 @@
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
 
+    <!-- In-app updater: hand a downloaded APK to the system package installer.
+         Installing through Shizuku or root does not need this permission. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <application
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
@@ -39,5 +43,28 @@
                 <data android:scheme="https" android:host="*.victuscloud.com" />
             </intent-filter>
         </activity>
+
+        <!-- In-app updater: serves downloaded APKs to the system package installer. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- Shizuku: lets the updater install as the ADB/shell identity (no root
+             and no unknown-sources prompt). The INTERACT_ACROSS_USERS_FULL
+             permission keeps this provider off-limits to other apps, as the
+             Shizuku developer guide requires. -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
     </application>
 </manifest>

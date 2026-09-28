@@ -8,31 +8,46 @@ interface FloatingChatBubbleProps {
 
 const STORAGE_KEY = 'victus_chat_bubble_pos_v2';
 const BUBBLE_SIZE = 54; // px
-const MARGIN = 16; // margin from edges
+const MARGIN = 12; // margin from frame edges
 const TOP_BAR_HEIGHT = 60;
 const DOCK_BAR_HEIGHT = 68;
+
+// Clamp within the app frame (the nearest positioned ancestor), not the window,
+// so the bubble never escapes the phone shell on desktop.
+function clampToFrame(x: number, y: number): { x: number; y: number } {
+  const frame = document.querySelector('.app-shell');
+  const w = frame ? frame.clientWidth : window.innerWidth;
+  const h = frame ? frame.clientHeight : window.innerHeight;
+  const minX = MARGIN;
+  const maxX = Math.max(MARGIN, w - BUBBLE_SIZE - MARGIN);
+  const minY = TOP_BAR_HEIGHT + 8;
+  const maxY = Math.max(minY, h - DOCK_BAR_HEIGHT - BUBBLE_SIZE - MARGIN);
+  return {
+    x: Math.min(Math.max(x, minX), maxX),
+    y: Math.min(Math.max(y, minY), maxY),
+  };
+}
 
 export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ onNavigateSupport }) => {
   const { showToast } = useToast();
   const [position, setPosition] = useState<{ x: number; y: number }>(() => {
+    const fallback = { x: 280, y: 500 };
+    let candidate = fallback;
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
-          return parsed;
+        if (parsed && typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+          candidate = parsed;
         }
       }
     } catch {
       // fallback
     }
-    // Default: bottom-right above dock
-    const defaultX = typeof window !== 'undefined' ? window.innerWidth - BUBBLE_SIZE - MARGIN : 280;
-    const defaultY =
-      typeof window !== 'undefined'
-        ? window.innerHeight - DOCK_BAR_HEIGHT - BUBBLE_SIZE - MARGIN
-        : 500;
-    return { x: defaultX, y: defaultY };
+    // Clamp restored OR default positions to the app frame so a saved
+    // position from a bigger screen can never render the bubble off-screen.
+    if (typeof window === 'undefined') return candidate;
+    return clampToFrame(candidate.x, candidate.y);
   });
 
   const [isDragging, setIsDragging] = useState(false);
@@ -60,18 +75,10 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ onNaviga
     hasMoved: false,
   });
 
-  // Clamp bubble position within viewport bounds safely
+  // Clamp bubble position within the app frame (falls back to viewport)
   const clampPosition = useCallback((x: number, y: number) => {
     if (typeof window === 'undefined') return { x, y };
-    const minX = MARGIN;
-    const maxX = Math.max(MARGIN, window.innerWidth - BUBBLE_SIZE - MARGIN);
-    const minY = TOP_BAR_HEIGHT + 8;
-    const maxY = Math.max(minY, window.innerHeight - DOCK_BAR_HEIGHT - BUBBLE_SIZE - MARGIN);
-
-    return {
-      x: Math.min(Math.max(x, minX), maxX),
-      y: Math.min(Math.max(y, minY), maxY),
-    };
+    return clampToFrame(x, y);
   }, []);
 
   // Ensure position stays in bounds on resize/orientation change
@@ -79,7 +86,11 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ onNaviga
     const handleResize = () => {
       setPosition((prev) => {
         const clamped = clampPosition(prev.x, prev.y);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(clamped));
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(clamped));
+        } catch {
+          // Storage may be unavailable (private mode); clamping still applies.
+        }
         return clamped;
       });
     };
@@ -186,7 +197,7 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ onNaviga
           transform: `translate3d(${position.x}px, ${position.y}px, 0)`,
           touchAction: 'none',
         }}
-        className={`fixed top-0 left-0 z-40 w-[54px] h-[54px] rounded-full bg-white text-slate-900 shadow-[0_8px_28px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.2)] flex items-center justify-center cursor-grab active:cursor-grabbing transition-transform duration-75 select-none ${
+        className={`absolute top-0 left-0 z-overlay w-[54px] h-[54px] rounded-full bg-white text-slate-900 shadow-[0_8px_28px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.2)] flex items-center justify-center cursor-grab active:cursor-grabbing transition-transform duration-75 select-none ${
           isDragging ? 'scale-105 opacity-90 shadow-2xl' : 'hover:scale-105'
         }`}
       >
@@ -200,11 +211,11 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ onNaviga
       {/* Interactive Quick Support & Chat Sheet/Modal */}
       {isChatModalOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-xs animate-in fade-in duration-150"
+          className="absolute inset-0 z-modal flex items-end justify-center bg-black/70 backdrop-blur-xs animate-in fade-in duration-150"
           onClick={() => setIsChatModalOpen(false)}
         >
           <div
-            className="w-full sm:max-w-md h-[80vh] sm:h-[540px] rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/[0.08] bg-[#111117] text-white shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200 select-none"
+            className="w-full h-[80%] rounded-t-3xl border-t border-white/[0.08] bg-[#111117] text-white shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200 select-none"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}

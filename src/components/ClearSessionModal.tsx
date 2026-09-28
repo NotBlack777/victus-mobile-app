@@ -18,8 +18,12 @@ export const ClearSessionModal: React.FC<ClearSessionModalProps> = ({
   if (!isOpen) return null;
 
   const handleConfirm = () => {
+    // Clear every Victus cache the app actually persists (theme, notifications,
+    // chat-bubble position and the auth session itself) + any stray sessionStorage.
     try {
       sessionStorage.clear();
+      const victusKeys = ['victus_theme_prefs_web', 'victus_notifications_v1', 'victus_chat_bubble_pos_v2', 'victus_auth_session'];
+      victusKeys.forEach((key) => localStorage.removeItem(key));
     } catch {
       // Ignored
     }
@@ -30,7 +34,7 @@ export const ClearSessionModal: React.FC<ClearSessionModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150"
+      className="absolute inset-0 z-modal flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150"
       onClick={onClose}
     >
       <div
@@ -43,7 +47,7 @@ export const ClearSessionModal: React.FC<ClearSessionModalProps> = ({
 
         <h3 className="text-base font-bold mb-1.5 text-white">Clear app session?</h3>
         <p className="text-xs text-slate-400 leading-relaxed mb-5">
-          This resets browser cookies, local caches, and active panel sessions in the app shell.
+          This signs you out and resets saved theme, notifications, and app-shell caches on this device. Your cloud account is unaffected.
         </p>
 
         <div className="flex gap-2">

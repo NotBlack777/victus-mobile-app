@@ -76,4 +76,60 @@
 
     <string name="link_copied">Link copied</string>
     <string name="no_app_to_handle">No app installed that can open this link</string>
+
+    <!-- In-app updater -->
+    <string name="tools_check_updates">Check for updates</string>
+    <string name="update_title">App updates</string>
+    <string name="update_subtitle">Check, download and install a new build of Victus Cloud.</string>
+    <string name="update_installed">Installed</string>
+    <string name="update_available">Available</string>
+    <string name="update_changelog">What\'s new</string>
+    <string name="update_method">Install method</string>
+    <string name="update_close">Close</string>
+    <string name="update_checking">Contacting the update source…</string>
+    <string name="update_found">A newer build is available.</string>
+    <string name="update_none">You\'re on the latest version.</string>
+    <string name="update_downloading">Downloading and verifying the update…</string>
+    <string name="update_verified">Download verified and signed by the installed app\'s key.</string>
+    <string name="update_verified_debug">Verified (debug build — signed with the shared debug key).</string>
+    <string name="update_installing">Installing…</string>
+    <string name="update_source_label">Source: %1$s — tap to change</string>
+    <string name="update_source_title">Update source</string>
+    <string name="update_source_message">An https URL that returns either a Victus update manifest or a GitHub releases/latest response.</string>
+    <string name="update_source_save">Save</string>
+    <string name="update_source_invalid">Enter a valid https URL</string>
+    <string name="update_state_checking">Checking for updates…</string>
+    <string name="update_state_current">Up to date</string>
+    <string name="update_state_available">Update available</string>
+    <string name="update_state_downloading">Downloading</string>
+    <string name="update_state_ready">Ready to install</string>
+    <string name="update_state_installing">Installing</string>
+    <string name="update_state_done">Update installed</string>
+    <string name="update_state_error">Update failed</string>
+    <string name="update_action_check">Check for updates</string>
+    <string name="update_action_download">Download %1$s</string>
+    <string name="update_action_install">Install update</string>
+    <string name="update_action_grant">Grant Shizuku access</string>
+    <string name="update_action_close">Close app</string>
+    <string name="update_action_working">Working…</string>
+    <string name="update_method_grant">grant access</string>
+    <string name="update_method_none">unavailable</string>
+    <string name="update_method_root">root</string>
+    <string name="update_method_installer">system UI</string>
+    <string name="update_method_installer_locked">enable first</string>
+    <string name="update_needs_unknown_sources">Allow \"install unknown apps\" for Victus Cloud, then try again.</string>
+    <string name="update_shizuku_missing">Shizuku is not running. Start it, then tap Shizuku again.</string>
+    <string name="update_shizuku_old">This Shizuku version is too old — please update the Shizuku app.</string>
+    <string name="update_shizuku_denied">Shizuku access was denied permanently. Re-grant it in the Shizuku app.</string>
+    <string name="update_shizuku_asking">Waiting for Shizuku permission…</string>
+    <string name="update_root_missing">No root access (su not found or denied).</string>
+
+    <!-- Default in-app updater source; overridden per-device from the update sheet. -->
+    <string name="update_manifest_url" translatable="false">https://api.github.com/repos/NotBlack777/victus-mobile-app/releases/latest</string>
+
+    <string-array name="update_methods" translatable="false">
+        <item>Shizuku</item>
+        <item>Root</item>
+        <item>Installer</item>
+    </string-array>
 </resources>

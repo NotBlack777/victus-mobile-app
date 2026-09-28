@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Paths shared through FileProvider. The in-app updater downloads APKs into
+     cacheDir/updates and hands them to the system package installer as a
+     content:// URI with a one-shot read grant — nothing else is exposed. -->
+<paths>
+    <cache-path
+        name="updates"
+        path="updates/" />
+</paths>

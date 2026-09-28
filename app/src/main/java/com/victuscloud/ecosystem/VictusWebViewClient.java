@@ -43,7 +43,8 @@ final class VictusWebViewClient extends WebViewClient {
         this.assetLoader = assetLoader;
     }
 
-    /** Serves assets/home.html + victus-logo.png over https — no file:// URLs. */
+    /** Serves the bundled React app (assets/index.html + its /assets/* bundles,
+     *  icons and manifest) over https — no file:// URLs. */
     @Nullable
     @Override
     public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {

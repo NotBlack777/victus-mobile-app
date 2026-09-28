@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   ExternalLink,
   Lock,
@@ -20,7 +20,7 @@ import { useToast } from './Toast.tsx';
 import { useTheme } from '../context/ThemeContext.tsx';
 import { ControlDashboard } from './ControlDashboard.tsx';
 import { ServiceControlScreen } from './ServiceControlScreen.tsx';
-import { VictusService } from '../services/controlData.ts';
+import { VictusService, REAL_VICTUS_SERVICES } from '../services/controlData.ts';
 import { openVictusLink } from '../utils/navigation.ts';
 
 interface EcosystemFrameProps {
@@ -58,6 +58,22 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
 
   // Selected service for the per-server control screen
   const [selectedService, setSelectedService] = useState<VictusService | null>(null);
+
+  // Live fleet state so power actions in the per-server screen are reflected
+  // in the dashboard list and its stats (previously the list never updated).
+  const [serviceStates, setServiceStates] = useState<Record<string, VictusService['status']>>({});
+  const services = useMemo(
+    () =>
+      REAL_VICTUS_SERVICES.map((srv) => ({
+        ...srv,
+        status: serviceStates[srv.id] ?? srv.status,
+      })),
+    [serviceStates]
+  );
+
+  const handleUpdateServiceStatus = (serviceId: string, status: VictusService['status']) => {
+    setServiceStates((prev) => ({ ...prev, [serviceId]: status }));
+  };
 
   // Real data structures reflecting Victus Cloud properties
   const [driveFiles] = useState([
@@ -102,11 +118,20 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
 
   const iframeSrc = `/api/proxy?url=${encodeURIComponent(url)}`;
 
+  // Safe hostname display: never crash on a malformed/relative URL
+  const displayHostname = (() => {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return url || 'Victus Cloud';
+    }
+  })();
+
   return (
     <div className="flex-1 w-full flex flex-col relative select-none bg-[var(--bg)] text-[var(--text)]">
       {/* View Switcher Top Bar for Web/Native Panels */}
       <div
-        className="w-full flex items-center justify-between px-3 sm:px-6 py-2 border-b text-xs transition-colors backdrop-blur-md"
+        className="w-full flex items-center justify-between px-3 py-2 border-b text-xs transition-colors backdrop-blur-md"
         style={{
           backgroundColor: 'var(--panel)',
           borderColor: 'var(--divider)',
@@ -147,12 +172,12 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
 
       {/* Primary View: Live Web iframe */}
       {viewMode === 'iframe' && (
-        <div className="flex-1 w-full relative min-h-[calc(100vh-140px)] flex flex-col">
+        <div className="flex-1 w-full relative min-h-0 flex flex-col">
           {isIframeLoading && !iframeError && (
             <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#0a0a0f]/90 backdrop-blur-xs">
               <div className="w-8 h-8 rounded-full border-2 border-violet-500 border-t-transparent animate-spin mb-3" />
               <p className="text-xs text-slate-300 font-medium tracking-wide">
-                Connecting to {new URL(url).hostname}…
+                Connecting to {displayHostname}…
               </p>
             </div>
           )}
@@ -186,7 +211,7 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
               key={iframeKey}
               src={iframeSrc}
               title={title}
-              className="w-full flex-1 border-none m-0 p-0 block bg-[#0a0a0f] min-h-[calc(100vh-140px)]"
+              className="w-full flex-1 border-none m-0 p-0 block bg-[#0a0a0f] min-h-0"
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
               onLoad={() => setIsIframeLoading(false)}
               onError={() => {
@@ -200,18 +225,20 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
 
       {/* Alternative View: Native App Experience */}
       {viewMode === 'app' && (
-        <div className="flex-1 w-full overflow-y-auto">
+        <div className="flex-1 w-full overflow-y-auto no-scrollbar">
           {/* ======================================================== */}
           {/* CONTROL TAB (Dashboard / Fleet Overview or Service Detail) */}
           {/* ======================================================== */}
           {isControl ? (
             selectedService ? (
               <ServiceControlScreen
-                service={selectedService}
+                service={services.find((s) => s.id === selectedService.id) ?? selectedService}
                 onBack={() => setSelectedService(null)}
+                onUpdateServiceStatus={handleUpdateServiceStatus}
               />
             ) : (
               <ControlDashboard
+                services={services}
                 onSelectService={(srv) => setSelectedService(srv)}
                 onNavigateTab={onNavigate}
               />
@@ -220,7 +247,7 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
             /* ======================================================== */
             /* BILLING PORTAL (Paymenter Engine) */
             /* ======================================================== */
-            <div className="w-full max-w-[64rem] mx-auto px-3 sm:px-6 py-4 pb-24 space-y-4">
+            <div className="w-full px-3 py-4 pb-24 space-y-4">
               <div className="p-5 rounded-2xl border border-white/[0.08] bg-[#14141c] shadow-sm flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
@@ -285,7 +312,7 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
             /* ======================================================== */
             /* DRIVE PORTAL */
             /* ======================================================== */
-            <div className="w-full max-w-[64rem] mx-auto px-3 sm:px-6 py-4 pb-24 space-y-4">
+            <div className="w-full px-3 py-4 pb-24 space-y-4">
               <div className="p-5 rounded-2xl border border-white/[0.08] bg-[#14141c] shadow-sm flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
@@ -345,7 +372,7 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
             /* ======================================================== */
             /* SUPPORT HUB */
             /* ======================================================== */
-            <div className="w-full max-w-[64rem] mx-auto px-3 sm:px-6 py-4 pb-24 space-y-4">
+            <div className="w-full px-3 py-4 pb-24 space-y-4">
               <div className="p-5 rounded-2xl border border-white/[0.08] bg-[#14141c] shadow-sm">
                 <div className="flex items-center gap-2 mb-1">
                   <LifeBuoy className="w-4 h-4 text-emerald-400" />
@@ -409,7 +436,7 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
             /* ======================================================== */
             /* STATUS OVERVIEW */
             /* ======================================================== */
-            <div className="w-full max-w-[64rem] mx-auto px-3 sm:px-6 py-4 pb-24 space-y-4">
+            <div className="w-full px-3 py-4 pb-24 space-y-4">
               <div className="p-5 rounded-2xl border border-white/[0.08] bg-[#14141c] shadow-sm">
                 <div className="flex items-center gap-3">
                   <Activity className="w-6 h-6 text-emerald-400" />
@@ -450,7 +477,7 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
             /* ======================================================== */
             /* WEBSITE GENERAL OVERVIEW */
             /* ======================================================== */
-            <div className="w-full max-w-[64rem] mx-auto px-3 sm:px-6 py-4 pb-24 space-y-4">
+            <div className="w-full px-3 py-4 pb-24 space-y-4">
               <div className="p-5 rounded-2xl border border-white/[0.08] bg-[#14141c] shadow-sm">
                 <span className="px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase inline-flex items-center gap-1.5 mb-2.5 bg-violet-500/10 text-violet-400 border border-violet-500/20">
                   <Zap className="w-3 h-3" /> Next-Gen Cloud Ecosystem
@@ -463,7 +490,7 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-3 gap-2">
                 <div className="p-4 rounded-xl border border-white/[0.08] bg-[#14141c]">
                   <Cpu className="w-4 h-4 mb-2 text-violet-400" />
                   <h4 className="font-bold text-xs text-white">Compute Nodes</h4>

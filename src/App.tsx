@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { TopBar } from './components/TopBar.tsx';
 import { DockBar, DOCK_TABS } from './components/DockBar.tsx';
 import { HomeView } from './components/HomeView.tsx';
@@ -6,7 +6,6 @@ import { EcosystemFrame } from './components/EcosystemFrame.tsx';
 import { SettingsSheet } from './components/SettingsSheet.tsx';
 import { ToolsMenu } from './components/ToolsMenu.tsx';
 import { NotificationPanel } from './components/NotificationPanel.tsx';
-import { LoginModal } from './components/LoginModal.tsx';
 import { LoginScreen } from './components/LoginScreen.tsx';
 import { AccountProfileModal } from './components/AccountProfileModal.tsx';
 import { FloatingChatBubble } from './components/FloatingChatBubble.tsx';
@@ -21,12 +20,12 @@ interface HistoryEntry {
   title: string;
 }
 
-export const App: React.FC = () => {
-  const { session, isLoading: isAuthLoading } = useAuth();
+const HOME_ENTRY: HistoryEntry = { tabId: 'home', url: '', title: 'Victus Cloud' };
 
-  const [history, setHistory] = useState<HistoryEntry[]>([
-    { tabId: 'home', url: '', title: 'Victus Cloud' },
-  ]);
+export const App: React.FC = () => {
+  const { session, signOut } = useAuth();
+
+  const [history, setHistory] = useState<HistoryEntry[]>([HOME_ENTRY]);
   const [currentIndex, setCurrentIndex] = useState(0);
 
   const [isLoading, setIsLoading] = useState(false);
@@ -35,7 +34,6 @@ export const App: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isToolsOpen, setIsToolsOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isClearSessionOpen, setIsClearSessionOpen] = useState(false);
 
@@ -48,7 +46,7 @@ export const App: React.FC = () => {
     message: '',
   });
 
-  const currentEntry = history[currentIndex] || history[0];
+  const currentEntry = history[currentIndex] || HOME_ENTRY;
   const canGoBack = currentIndex > 0 || currentEntry.tabId !== 'home';
 
   // Simulate progress bar animation on navigation
@@ -130,15 +128,35 @@ export const App: React.FC = () => {
     }
   }, [errorState.isOpen, currentIndex, currentEntry, navigateTo, triggerLoading]);
 
-  // Handle browser back button (predictive back / history API)
+  // Keep the newest navigation state in refs so the popstate listener can be
+  // installed exactly once. Re-registering it on every navigation pushed a new
+  // synthetic history entry each time, which trapped the system back gesture.
+  const handleBackRef = useRef(handleBack);
+  const canGoBackInAppRef = useRef(false);
+
   useEffect(() => {
-    const handlePopState = (e: PopStateEvent) => {
-      e.preventDefault();
-      handleBack();
+    handleBackRef.current = handleBack;
+    canGoBackInAppRef.current = currentIndex > 0 || currentEntry.tabId !== 'home';
+  });
+
+  // Android/system back gesture walks in-app history, then leaves the app.
+  useEffect(() => {
+    // A single synthetic entry sits on top of the app so the back gesture is
+    // intercepted instead of navigating away from the page.
+    window.history.pushState({ victus: true }, '');
+
+    const handlePopState = () => {
+      if (canGoBackInAppRef.current) {
+        handleBackRef.current();
+        // Re-arm the guardian entry now that this back press has been consumed.
+        window.history.pushState({ victus: true }, '');
+      }
+      // Otherwise stay popped, so the next back press actually exits the app.
     };
+
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [handleBack]);
+  }, []);
 
   const handleRefresh = useCallback(() => {
     setErrorState((prev) => ({ ...prev, isOpen: false }));
@@ -146,32 +164,22 @@ export const App: React.FC = () => {
   }, [triggerLoading]);
 
   const handleClearSession = useCallback(() => {
-    setHistory([{ tabId: 'home', url: '', title: 'Victus Cloud' }]);
+    setHistory([HOME_ENTRY]);
     setCurrentIndex(0);
     setErrorState({ isOpen: false, message: '' });
     triggerLoading();
-  }, [triggerLoading]);
+    // The modal promises to sign the user out: drop the in-memory session too,
+    // otherwise the app stayed signed in until the next reload.
+    void signOut();
+  }, [triggerLoading, signOut]);
 
-  // Top-level Auth Gate: If checking storage, show loading; if no session, render LoginScreen
-  if (isAuthLoading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#0a0a0f] text-white select-none">
-        <div className="w-12 h-12 flex items-center justify-center mb-4">
-          <svg viewBox="0 0 24 24" className="w-10 h-10 fill-violet-500 animate-pulse">
-            <path d="M12 2L1 21h22L12 2zm0 4.5l7 12H5l7-12z" />
-          </svg>
-        </div>
-        <div className="w-6 h-6 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
+  // Top-level Auth Gate: if no session, render the dedicated login screen
   if (!session) {
     return <LoginScreen />;
   }
 
   return (
-    <div className="min-h-screen flex flex-col relative text-[var(--text)] bg-[var(--bg)] transition-colors duration-250">
+    <div className="app-shell text-[var(--text)] bg-[var(--bg)] transition-colors duration-250 select-none">
       {/* Top native chrome */}
       <TopBar
         canGoBack={canGoBack}
@@ -179,15 +187,14 @@ export const App: React.FC = () => {
         onRefresh={handleRefresh}
         onOpenTools={() => setIsToolsOpen(true)}
         onOpenNotifications={() => setIsNotificationsOpen(true)}
-        onOpenLogin={() => setIsProfileOpen(true)}
         onOpenProfile={() => setIsProfileOpen(true)}
         isLoading={isLoading}
         progress={progress}
         currentTitle={currentEntry.title}
       />
 
-      {/* Main content body */}
-      <main className="flex-1 w-full relative z-10 flex flex-col">
+      {/* Scrollable app content between chrome bars */}
+      <div className="app-content">
         {currentEntry.tabId === 'home' || !currentEntry.url ? (
           <HomeView onNavigate={(url, title, tabId) => navigateTo(url, title, tabId)} />
         ) : (
@@ -201,7 +208,7 @@ export const App: React.FC = () => {
             }
           />
         )}
-      </main>
+      </div>
 
       {/* Moveable Floating Chat Bubble */}
       <FloatingChatBubble
@@ -224,7 +231,6 @@ export const App: React.FC = () => {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onNavigate={(url, title, tabId) => navigateTo(url, title, tabId)}
         onOpenClearSession={() => setIsClearSessionOpen(true)}
-        onOpenLogin={() => setIsProfileOpen(true)}
         onOpenProfile={() => setIsProfileOpen(true)}
       />
 
@@ -246,12 +252,6 @@ export const App: React.FC = () => {
         isOpen={isProfileOpen}
         onClose={() => setIsProfileOpen(false)}
         onNavigate={(url, title, tabId) => navigateTo(url, title, tabId)}
-      />
-
-      {/* Login / Auth Modal */}
-      <LoginModal
-        isOpen={isLoginOpen}
-        onClose={() => setIsLoginOpen(false)}
       />
 
       {/* Clear Session Modal */}

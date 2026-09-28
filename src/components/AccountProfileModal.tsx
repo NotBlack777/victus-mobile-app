@@ -19,6 +19,16 @@ import { useToast } from './Toast.tsx';
 import { useTheme } from '../context/ThemeContext.tsx';
 import { openVictusLink } from '../utils/navigation.ts';
 
+// Convert ms remaining until expiry into a human label
+function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return 'Expired';
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 60) return `${minutes}m remaining`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h remaining`;
+  return `${Math.floor(hours / 24)} days remaining`;
+}
+
 interface AccountProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -74,14 +84,18 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({
   const displayName = user.user_metadata?.name || user.email.split('@')[0];
   const role = user.user_metadata?.role || (user.email.includes('admin') ? 'Administrator' : 'Cloud Member');
   const avatarUrl = user.user_metadata?.avatar_url;
+  const sessionDuration =
+    session?.expires_at && session.expires_at > Date.now()
+      ? formatDuration(session.expires_at - Date.now())
+      : 'Session active';
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs animate-in fade-in duration-200 select-none"
+      className="absolute inset-0 z-modal flex items-center justify-center p-3 bg-black/80 backdrop-blur-xs animate-in fade-in duration-200 select-none"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[#111117] text-white shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-150 max-h-[92vh] flex flex-col"
+        className="w-full max-w-sm rounded-2xl border border-white/[0.08] bg-[#111117] text-white shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-150 max-h-[88%] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Ambient Top Glow */}
@@ -151,7 +165,7 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({
               </div>
               <div className="flex items-center gap-1.5 text-emerald-400 font-medium text-[10px] mt-1">
                 <CheckCircle2 className="w-3 h-3 text-emerald-400 flex-shrink-0" />
-                <span>Authenticated (Demo Admin Session)</span>
+                <span>Authenticated • Session active</span>
               </div>
             </div>
           </div>
@@ -215,7 +229,7 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({
                 <span>Session Duration</span>
               </div>
               <span className="font-mono font-medium text-slate-300">
-                7 Days (Auto-refresh)
+                {sessionDuration}
               </span>
             </div>
           </div>

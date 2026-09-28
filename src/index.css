@@ -2,6 +2,13 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+@theme {
+  /* Extra-small breakpoint. TopBar uses `xs:` for the breadcrumb prefix, which
+     previously never matched because the variant was undefined. 26rem keeps it
+     off narrow phones but visible inside the 432px desktop phone frame. */
+  --breakpoint-xs: 26rem;
+}
+
 :root {
   color-scheme: dark;
   --space-1: 0.25rem;
@@ -121,6 +128,7 @@ body {
   background-image: var(--bg-image);
   background-attachment: fixed;
   overflow-x: hidden;
+  overscroll-behavior-y: none; /* stops pull-to-refresh fighting the app shell */
   -webkit-tap-highlight-color: transparent;
   transition: background-color 0.25s ease, color 0.25s ease;
 }
@@ -147,3 +155,72 @@ body::before {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* ============================================================
+   Mobile app shell — the app fills a phone viewport edge-to-edge;
+   on desktop it runs inside a centered phone frame so the layout
+   is identical to the installed app.
+   ============================================================ */
+.app-shell {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh; /* mobile browsers: excludes URL bar */
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  touch-action: manipulation;
+}
+
+/* Desktop: render the app in a phone-sized frame */
+@media (min-width: 768px) and (min-height: 560px) {
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+      radial-gradient(circle at 15% 10%, rgba(139, 92, 246, 0.12), transparent 30rem),
+      radial-gradient(circle at 85% 90%, rgba(124, 58, 237, 0.1), transparent 28rem),
+      #050508;
+  }
+
+  .app-shell {
+    width: min(432px, 100vw - 48px);
+    height: min(932px, 100dvh - 48px);
+    border-radius: 44px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow:
+      0 40px 100px rgba(0, 0, 0, 0.6),
+      0 0 0 10px #16161d,
+      0 0 0 12px rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+    isolation: isolate;
+  }
+}
+
+/* Only the scrollable content between the top bar and dock scrolls */
+.app-content {
+  flex: 1 1 0;
+  min-height: 0;
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Layers inside the shell: chrome < overlays < modals */
+.z-chrome { z-index: 10; }
+.z-overlay { z-index: 30; }
+.z-modal { z-index: 50; }
+
+/* In-app chrome bars stay put while only content scrolls */
+.app-chrome {
+  position: relative;
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+/* Notched / gesture-bar phones: keep chrome clear of system UI */
+.pt-safe { padding-top: env(safe-area-inset-top, 0px); }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }

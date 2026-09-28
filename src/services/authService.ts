@@ -1,11 +1,10 @@
 /**
  * authService.ts
  *
- * Supabase-ready authentication service wrapper.
- * Currently uses local state and mock resolution with simulated network delay.
- * To integrate live Supabase: replace the mock implementations inside this file with
- * `supabase.auth.signInWithPassword`, `supabase.auth.signUp`, `supabase.auth.signOut`,
- * `supabase.auth.getSession`, and `supabase.auth.onAuthStateChange`.
+ * Supabase-style authentication service wrapper (drop-in API surface:
+ * signInWithPassword / signUp / signOut / getSession / onAuthStateChange).
+ * Currently backed by localStorage so it works fully offline; swapping in
+ * live Supabase only requires replacing the internals, not the callers.
  */
 
 export interface User {
@@ -54,31 +53,31 @@ function emitAuthChange(event: AuthChangeEvent, session: Session | null) {
   });
 }
 
-// Read stored session on boot
+// Read stored session on boot. Returns null (and cleans up) for missing,
+// corrupt, expired, or invalid sessions. Never fabricates a user.
 export function getStoredSession(): Session | null {
   try {
     const raw = localStorage.getItem(AUTH_STORAGE_KEY);
     if (!raw) return null;
-    const session = JSON.parse(raw) as Session;
-    // Check if expired
-    if (!session || (session.expires_at && session.expires_at < Date.now())) {
+
+    let session: Session;
+    try {
+      session = JSON.parse(raw) as Session;
+    } catch {
       localStorage.removeItem(AUTH_STORAGE_KEY);
       return null;
     }
-    // Guarantee session has a valid user object
-    if (!session.user || !session.user.email) {
-      session.user = {
-        id: session.user?.id || 'usr_admin_demo',
-        email: 'admin@victuscloud.com',
-        user_metadata: {
-          name: 'Victus Admin',
-          avatar_url: 'https://api.dicebear.com/7.x/bottts/svg?seed=admin@victuscloud.com',
-          role: 'Administrator',
-        },
-        created_at: new Date().toISOString(),
-      };
-      persistSession(session);
+
+    if (!session || !session.user || !session.user.email) {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      return null;
     }
+
+    if (session.expires_at && session.expires_at < Date.now()) {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      return null;
+    }
+
     return session;
   } catch {
     return null;
@@ -97,6 +96,37 @@ function persistSession(session: Session | null) {
   }
 }
 
+// Keep every tab in sync: another tab signing in/out updates this one live.
+function broadcastSession(session: Session | null) {
+  persistSession(session);
+  emitAuthChange(session ? 'SIGNED_IN' : 'SIGNED_OUT', session);
+}
+
+function buildSession(email: string, name?: string): Session {
+  const cleanEmail = email.trim().toLowerCase();
+  const now = Date.now();
+  const expiresIn = 3600 * 24 * 7; // 7 days in seconds
+
+  const user: User = {
+    id: `usr_${Math.random().toString(36).substring(2, 10)}${now.toString(36)}`,
+    email: cleanEmail,
+    user_metadata: {
+      name: name?.trim() || cleanEmail.split('@')[0],
+      avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(cleanEmail)}`,
+      role: cleanEmail.includes('admin') ? 'Administrator' : 'Cloud Member',
+    },
+    created_at: new Date().toISOString(),
+  };
+
+  return {
+    access_token: `vic_${Math.random().toString(36).substring(2)}${now.toString(36)}`,
+    token_type: 'bearer',
+    expires_in: expiresIn,
+    expires_at: now + expiresIn * 1000,
+    user,
+  };
+}
+
 export const authService = {
   /**
    * Sign in with email and password
@@ -111,7 +141,7 @@ export const authService = {
     const cleanEmail = email.trim().toLowerCase();
 
     // Validation
-    if (!cleanEmail || !cleanEmail.includes('@')) {
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       return {
         user: null,
         session: null,
@@ -127,30 +157,10 @@ export const authService = {
       };
     }
 
-    // Mock successful authentication
-    const user: User = {
-      id: `usr_${Math.random().toString(36).substring(2, 10)}`,
-      email: cleanEmail,
-      user_metadata: {
-        name: cleanEmail.split('@')[0],
-        avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanEmail}`,
-        role: cleanEmail.includes('admin') ? 'Administrator' : 'Cloud Member',
-      },
-      created_at: new Date().toISOString(),
-    };
+    const session = buildSession(cleanEmail);
+    broadcastSession(session);
 
-    const session: Session = {
-      access_token: `mock_jwt_${Math.random().toString(36).substring(2)}`,
-      token_type: 'bearer',
-      expires_in: 3600 * 24 * 7, // 7 days
-      expires_at: Date.now() + 1000 * 3600 * 24 * 7,
-      user,
-    };
-
-    persistSession(session);
-    emitAuthChange('SIGNED_IN', session);
-
-    return { user, session, error: null };
+    return { user: session.user, session, error: null };
   },
 
   /**
@@ -165,7 +175,7 @@ export const authService = {
 
     const cleanEmail = email.trim().toLowerCase();
 
-    if (!cleanEmail || !cleanEmail.includes('@')) {
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       return {
         user: null,
         session: null,
@@ -181,29 +191,10 @@ export const authService = {
       };
     }
 
-    const user: User = {
-      id: `usr_${Math.random().toString(36).substring(2, 10)}`,
-      email: cleanEmail,
-      user_metadata: {
-        name: name?.trim() || cleanEmail.split('@')[0],
-        avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanEmail}`,
-        role: 'Cloud Member',
-      },
-      created_at: new Date().toISOString(),
-    };
+    const session = buildSession(cleanEmail, name);
+    broadcastSession(session);
 
-    const session: Session = {
-      access_token: `mock_jwt_${Math.random().toString(36).substring(2)}`,
-      token_type: 'bearer',
-      expires_in: 3600 * 24 * 7,
-      expires_at: Date.now() + 1000 * 3600 * 24 * 7,
-      user,
-    };
-
-    persistSession(session);
-    emitAuthChange('SIGNED_IN', session);
-
-    return { user, session, error: null };
+    return { user: session.user, session, error: null };
   },
 
   /**
@@ -211,8 +202,7 @@ export const authService = {
    */
   async signOut(): Promise<{ error: AuthError | null }> {
     await new Promise((resolve) => setTimeout(resolve, 250));
-    persistSession(null);
-    emitAuthChange('SIGNED_OUT', null);
+    broadcastSession(null);
     return { error: null };
   },
 
@@ -240,7 +230,9 @@ export const authService = {
   },
 
   /**
-   * Listen to auth state transitions
+   * Listen to auth state transitions.
+   * Unlike the real Supabase client, the initial session is emitted
+   * synchronously right after subscribing.
    */
   onAuthStateChange(callback: AuthStateChangeCallback): { unsubscribe: () => void } {
     listeners.add(callback);
@@ -248,9 +240,17 @@ export const authService = {
     const current = getStoredSession();
     callback('INITIAL_SESSION', current);
 
+    // Cross-tab sync via the storage event
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key !== AUTH_STORAGE_KEY) return;
+      callback('INITIAL_SESSION', getStoredSession());
+    };
+    window.addEventListener('storage', handleStorage);
+
     return {
       unsubscribe: () => {
         listeners.delete(callback);
+        window.removeEventListener('storage', handleStorage);
       },
     };
   },

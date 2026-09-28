@@ -120,7 +120,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
   ];
 
   return (
-    <div className="w-full max-w-[64rem] mx-auto px-3 sm:px-6 pt-4 pb-24 space-y-4 animate-in fade-in duration-200">
+    <div className="w-full flex-1 overflow-y-auto no-scrollbar px-3 pt-4 pb-28 space-y-4 animate-in fade-in duration-200">
       {/* Hero card matching admin panel elevation (#111117 / border-white/[0.08]) */}
       <section
         className="rounded-xl p-5 sm:p-6 border relative overflow-hidden shadow-sm transition-colors duration-200"
@@ -266,13 +266,19 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+        <div className="grid grid-cols-2 gap-2.5">
           {panels.map((panel) => {
             const Icon = panel.icon;
             return (
               <div
                 key={panel.id}
                 onClick={() => onNavigate(panel.url, panel.title, panel.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onNavigate(panel.url, panel.title, panel.id);
+                  }
+                }}
                 role="button"
                 tabIndex={0}
                 className="p-4 rounded-xl border hover:border-violet-500/30 transition-all cursor-pointer group flex flex-col justify-between"
@@ -336,7 +342,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
           </h3>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {quickActions.map((action) => {
             const Icon = action.icon;
             return (
