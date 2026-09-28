@@ -118,6 +118,9 @@
     <string name="update_method_installer">system UI</string>
     <string name="update_method_installer_locked">enable first</string>
     <string name="update_needs_unknown_sources">Allow \"install unknown apps\" for Victus Cloud, then try again.</string>
+    <!-- Tools-menu entry when a background check found a newer build. -->
+    <string name="tools_check_updates_available">Update available · v%s</string>
+    <string name="tools_update_available">Check for updates — version %s available</string>
     <string name="update_shizuku_missing">Shizuku is not running. Start it, then tap Shizuku again.</string>
     <string name="update_shizuku_old">This Shizuku version is too old — please update the Shizuku app.</string>
     <string name="update_shizuku_denied">Shizuku access was denied permanently. Re-grant it in the Shizuku app.</string>
@@ -132,4 +135,14 @@
         <item>Root</item>
         <item>Installer</item>
     </string-array>
+
+    <!-- Long-press launcher shortcuts -->
+    <string name="shortcut_updates_short">Check for updates</string>
+    <string name="shortcut_updates_long">Check for app updates</string>
+    <string name="shortcut_servers_short">My Servers</string>
+    <string name="shortcut_servers_long">Open the control panel</string>
+    <string name="shortcut_billing_short">Billing</string>
+    <string name="shortcut_billing_long">Invoices, top-ups and subscriptions</string>
+    <string name="shortcut_support_short">Support</string>
+    <string name="shortcut_support_long">Tickets, guides and Discord</string>
 </resources>

@@ -1,0 +1,23 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Two rack units, each with an indicator bar. -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2"
+        android:fillColor="#00000000"
+        android:pathData="M3,4.5h18v6H3z" />
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2"
+        android:fillColor="#00000000"
+        android:pathData="M3,13.5h18v6H3z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M6,6.5h4v2H6z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M6,15.5h4v2H6z" />
+</vector>

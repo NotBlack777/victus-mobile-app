@@ -251,6 +251,10 @@ final class UpdateSheet {
             try {
                 UpdateManifest fetched = UpdateChecker.fetch(source);
                 boolean newer = fetched.isNewerThan(versionCode(activity), ownVersionName());
+                // Feed the tools-menu badge, so a manual check and the silent
+                // launch check never disagree with each other.
+                UpdateChecker.rememberAvailable(
+                        activity.getApplicationContext(), newer ? fetched : null);
                 UpdateChecker.MAIN.post(() -> {
                     manifest = fetched;
                     apk = null;
@@ -353,6 +357,8 @@ final class UpdateSheet {
                     state = State.DONE;
                     handedToPackageInstaller = backend == UpdateInstaller.Backend.PACKAGE_INSTALLER;
                     if (!handedToPackageInstaller) UpdateChecker.clearDownloads(activity);
+                    // Whatever was pending has now been installed.
+                    UpdateChecker.forgetAvailability(activity);
                     statusDetail = message;
                 } else if ("needs-unknown-sources".equals(message)) {
                     state = State.ERROR;

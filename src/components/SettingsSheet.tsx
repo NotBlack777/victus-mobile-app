@@ -1,14 +1,7 @@
 import React, { useState } from 'react';
 import { Check, RotateCcw, LogOut, ExternalLink } from 'lucide-react';
-import {
-  useTheme,
-  DEFAULT_A,
-  DEFAULT_B,
-  DEFAULT_C,
-  BLUE_TEAL_A,
-  BLUE_TEAL_B,
-  BLUE_TEAL_C,
-} from '../context/ThemeContext.tsx';
+import { useTheme } from '../context/ThemeContext.tsx';
+import { BACKGROUND_OPTIONS, THEME_PRESET_OPTIONS } from '../theme/palettes.ts';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useToast } from './Toast.tsx';
 
@@ -32,6 +25,7 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({ isOpen, onClose })
     setReduceMotion,
     setOpenLinksExternally,
     setColorMode,
+    setBackground,
     resetToDefault,
   } = useTheme();
 
@@ -115,49 +109,33 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({ isOpen, onClose })
           </span>
 
           <div className="grid grid-cols-3 gap-4">
-            {/* Swatch 1: Purple -> Black */}
-            <button
-              onClick={() => setPreset('purple_black')}
-              className="flex flex-col items-center group cursor-pointer focus:outline-none"
-            >
-              <div
-                className={`w-14 h-14 rounded-full transition-all duration-200 ${
-                  config.preset === 'purple_black'
-                    ? 'ring-2 ring-violet-500 ring-offset-4 ring-offset-[#0f0a1c] shadow-[0_0_15px_rgba(139,92,246,0.4)]'
-                    : 'opacity-85 hover:opacity-100 hover:scale-105'
-                }`}
-                style={{
-                  background: `linear-gradient(135deg, ${DEFAULT_A}, ${DEFAULT_B}, ${DEFAULT_C})`,
-                }}
-              />
-              <span className="text-xs font-bold text-white mt-3 text-center">
-                Purple → Black
-              </span>
-            </button>
+            {THEME_PRESET_OPTIONS.map((option) => {
+              const isActive = config.preset === option.id;
+              return (
+                <button
+                  key={option.id}
+                  onClick={() => setPreset(option.id)}
+                  aria-pressed={isActive}
+                  title={option.label}
+                  className="flex flex-col items-center group cursor-pointer focus:outline-none"
+                >
+                  <div
+                    className={`w-14 h-14 rounded-full transition-all duration-200 ${
+                      isActive ? option.activeClass : 'opacity-85 hover:opacity-100 hover:scale-105'
+                    }`}
+                    style={{ background: option.swatch }}
+                  />
+                  <span className="text-xs font-bold text-white mt-3 text-center">
+                    {option.label}
+                  </span>
+                </button>
+              );
+            })}
 
-            {/* Swatch 2: Blue -> Teal */}
-            <button
-              onClick={() => setPreset('blue_teal')}
-              className="flex flex-col items-center group cursor-pointer focus:outline-none"
-            >
-              <div
-                className={`w-14 h-14 rounded-full transition-all duration-200 ${
-                  config.preset === 'blue_teal'
-                    ? 'ring-2 ring-sky-400 ring-offset-4 ring-offset-[#0f0a1c] shadow-[0_0_15px_rgba(56,189,248,0.4)]'
-                    : 'opacity-85 hover:opacity-100 hover:scale-105'
-                }`}
-                style={{
-                  background: `linear-gradient(135deg, ${BLUE_TEAL_A}, ${BLUE_TEAL_B}, ${BLUE_TEAL_C})`,
-                }}
-              />
-              <span className="text-xs font-bold text-white mt-3 text-center">
-                Blue → Teal
-              </span>
-            </button>
-
-            {/* Swatch 3: Custom */}
+            {/* Swatch: Custom */}
             <button
               onClick={() => setPreset('custom')}
+              aria-pressed={config.preset === 'custom'}
               className="flex flex-col items-center group cursor-pointer focus:outline-none"
             >
               <div
@@ -219,6 +197,38 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({ isOpen, onClose })
               )}
             </div>
           )}
+        </div>
+
+        {/* BACKGROUND Section — ambient motion behind the interface */}
+        <div className="mb-6">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
+            BACKGROUND
+          </span>
+          <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+            Ambient motion behind the interface. Holds still on its own when animations are
+            reduced.
+          </p>
+
+          <div className="grid grid-cols-2 gap-2">
+            {BACKGROUND_OPTIONS.map((option) => {
+              const isActive = config.background === option.id;
+              return (
+                <button
+                  key={option.id}
+                  onClick={() => setBackground(option.id)}
+                  aria-pressed={isActive}
+                  className={`px-3 py-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                    isActive
+                      ? 'border-violet-500 bg-violet-600/25 text-white shadow-[0_0_10px_rgba(139,92,246,0.25)]'
+                      : 'border-white/[0.08] bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/[0.06]'
+                  }`}
+                >
+                  <span className="block text-xs font-bold">{option.label}</span>
+                  <span className="block text-[10px] mt-0.5 opacity-80">{option.hint}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Divider matching reference screenshot */}

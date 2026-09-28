@@ -11,6 +11,7 @@ import { AccountProfileModal } from './components/AccountProfileModal.tsx';
 import { FloatingChatBubble } from './components/FloatingChatBubble.tsx';
 import { ClearSessionModal } from './components/ClearSessionModal.tsx';
 import { ErrorOverlay } from './components/ErrorOverlay.tsx';
+import { BackgroundFX } from './components/BackgroundFX.tsx';
 import { DockTab } from './types.ts';
 import { useAuth } from './context/AuthContext.tsx';
 
@@ -180,6 +181,9 @@ export const App: React.FC = () => {
 
   return (
     <div className="app-shell text-[var(--text)] bg-[var(--bg)] transition-colors duration-250 select-none">
+      {/* Animated, theme-aware backdrop (aurora / mesh / starfield / off) */}
+      <BackgroundFX />
+
       {/* Top native chrome */}
       <TopBar
         canGoBack={canGoBack}

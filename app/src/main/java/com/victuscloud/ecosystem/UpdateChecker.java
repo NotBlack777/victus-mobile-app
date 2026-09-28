@@ -50,6 +50,16 @@ final class UpdateChecker {
 
     private static final String PREFS = "victus_updater";
     private static final String KEY_SOURCE_URL = "source_url";
+    private static final String KEY_AVAILABLE_VERSION = "available_version_name";
+    private static final String KEY_AVAILABLE_CODE = "available_version_code";
+    private static final String KEY_LAST_CHECK = "last_check_at";
+
+    /**
+     * Relaunching the app shouldn't re-hit the update source every time, so a
+     * launch check is skipped when one already ran within this window. A manual
+     * "Check for updates" always runs regardless.
+     */
+    private static final long CHECK_THROTTLE_MS = 6L * 60L * 60L * 1000L;
 
     private static final int CONNECT_TIMEOUT_MS = 15_000;
     private static final int READ_TIMEOUT_MS = 30_000;
@@ -221,6 +231,71 @@ final class UpdateChecker {
             if (value.equals(wanted)) return true;
         }
         return false;
+    }
+
+    // ------------------------------------------------------------- installed build
+
+    static int installedVersionCode(Context context) throws Exception {
+        return installedInfo(context).versionCode;
+    }
+
+    static String installedVersionName(Context context) throws Exception {
+        PackageInfo info = installedInfo(context);
+        return info.versionName == null ? "" : info.versionName;
+    }
+
+    private static PackageInfo installedInfo(Context context) throws Exception {
+        return context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+    }
+
+    /**
+     * Blocking — call from {@link #IO}. Returns the manifest only when it really
+     * is newer than the installed build, so callers can treat null as "up to
+     * date" without re-deriving the comparison.
+     */
+    static UpdateManifest checkForUpdate(Context context) throws Exception {
+        UpdateManifest manifest = fetch(sourceUrl(context));
+        if (!manifest.isNewerThan(installedVersionCode(context), installedVersionName(context))) {
+            return null;
+        }
+        return manifest;
+    }
+
+    // -------------------------------------------------------------- availability
+
+    /**
+     * Remembers what the last check found so the tools menu can show a badge
+     * without waiting on the network again. Passing null clears it.
+     */
+    static void rememberAvailable(Context context, UpdateManifest manifest) {
+        SharedPreferences.Editor editor = prefs(context).edit()
+                .putLong(KEY_LAST_CHECK, System.currentTimeMillis());
+        if (manifest == null) {
+            editor.remove(KEY_AVAILABLE_VERSION).remove(KEY_AVAILABLE_CODE);
+        } else {
+            editor.putString(
+                            KEY_AVAILABLE_VERSION,
+                            manifest.versionName == null ? "" : manifest.versionName)
+                    .putInt(KEY_AVAILABLE_CODE, manifest.versionCode);
+        }
+        editor.apply();
+    }
+
+    /** Version name of the update found by the last check, or null when current. */
+    static String availableVersionName(Context context) {
+        String value = prefs(context).getString(KEY_AVAILABLE_VERSION, null);
+        return value == null || value.trim().isEmpty() ? null : value.trim();
+    }
+
+    /** True when a check ran recently enough that a relaunch can skip it. */
+    static boolean checkedRecently(Context context) {
+        long last = prefs(context).getLong(KEY_LAST_CHECK, 0L);
+        return System.currentTimeMillis() - last < CHECK_THROTTLE_MS;
+    }
+
+    /** Drops the cached availability (used after an update is installed). */
+    static void forgetAvailability(Context context) {
+        prefs(context).edit().remove(KEY_AVAILABLE_VERSION).remove(KEY_AVAILABLE_CODE).apply();
     }
 
     // ------------------------------------------------------------------ files

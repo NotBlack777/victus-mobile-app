@@ -4,7 +4,13 @@ import { fireStorageEvent, openCalls, removeItem, resetStorage, seedItem, storag
 import { authService, getStoredSession } from '../src/services/authService.ts';
 import { notificationService } from '../src/services/notificationService.ts';
 import { openVictusLink } from '../src/utils/navigation.ts';
-import { REAL_VICTUS_SERVICES, getFleetStats } from '../src/services/controlData.ts';
+import {
+  REAL_VICTUS_SERVICES,
+  getFleetStats,
+  getNodeSummaries,
+  parseMiB,
+  formatMiB,
+} from '../src/services/controlData.ts';
 
 const AUTH_KEY = 'victus_auth_session';
 const NOTIFICATION_KEY = 'victus_notifications_v1';
@@ -223,5 +229,48 @@ describe('getFleetStats', () => {
     const after = getFleetStats(updated).runningCount;
 
     expect(after).toBe(before + 1);
+  });
+});
+
+describe('node infrastructure', () => {
+  test('parses allocated memory out of the plan labels', () => {
+    expect(parseMiB('8,192 MiB')).toBe(8192);
+    expect(parseMiB('80,000 MiB')).toBe(80000);
+    expect(parseMiB('unknown')).toBe(0);
+    expect(formatMiB(80000)).toBe('80,000 MiB');
+  });
+
+  test('every service belongs to exactly one node, so nothing is double counted', () => {
+    const summaries = getNodeSummaries(REAL_VICTUS_SERVICES);
+
+    expect(summaries.reduce((sum, node) => sum + node.total, 0)).toBe(
+      REAL_VICTUS_SERVICES.length
+    );
+    expect(summaries.reduce((sum, node) => sum + node.active, 0)).toBe(
+      REAL_VICTUS_SERVICES.filter((s) => s.status === 'ACTIVE').length
+    );
+  });
+
+  test('memory per node is the sum of that node\'s services', () => {
+    const summaries = getNodeSummaries(REAL_VICTUS_SERVICES);
+    const sg1 = summaries.find((node) => node.node === 'SG-1');
+    const expected = REAL_VICTUS_SERVICES.filter((s) => s.node === 'SG-1').reduce(
+      (sum, s) => sum + parseMiB(s.memory),
+      0
+    );
+
+    expect(sg1).toBeDefined();
+    expect(sg1?.memoryMiB).toBe(expected);
+  });
+
+  test('reports a datacentre for every node in the fleet', () => {
+    for (const node of getNodeSummaries(REAL_VICTUS_SERVICES)) {
+      expect(node.region.length).toBeGreaterThan(0);
+      expect(node.region).not.toBe('Victus Cloud');
+    }
+  });
+
+  test('an empty fleet produces no nodes instead of a phantom entry', () => {
+    expect(getNodeSummaries([])).toEqual([]);
   });
 });

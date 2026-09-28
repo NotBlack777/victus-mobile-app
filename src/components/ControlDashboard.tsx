@@ -12,8 +12,15 @@ import {
   Activity,
   Database,
   ExternalLink,
+  Network,
 } from 'lucide-react';
-import { VictusService, REAL_VICTUS_SERVICES, getFleetStats } from '../services/controlData.ts';
+import {
+  VictusService,
+  REAL_VICTUS_SERVICES,
+  getFleetStats,
+  getNodeSummaries,
+  formatMiB,
+} from '../services/controlData.ts';
 import { useToast } from './Toast.tsx';
 import { useTheme } from '../context/ThemeContext.tsx';
 import { openVictusLink } from '../utils/navigation.ts';
@@ -37,6 +44,7 @@ export const ControlDashboard: React.FC<ControlDashboardProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
 
   const stats = useMemo(() => getFleetStats(services), [services]);
+  const nodeSummaries = useMemo(() => getNodeSummaries(services), [services]);
 
   const filteredServices = useMemo(() => {
     return services.filter((srv) => {
@@ -304,6 +312,75 @@ export const ControlDashboard: React.FC<ControlDashboardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* ======================================================== */}
+      {/* 2b. NODE INFRASTRUCTURE — aggregated from the service list */}
+      {/* ======================================================== */}
+      <section className="rounded-2xl p-4 sm:p-5 border border-white/[0.08] bg-[#111117] shadow-sm space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Network className="w-4 h-4 text-slate-400" />
+            <h2 className="text-sm font-bold text-white">Node Infrastructure</h2>
+          </div>
+          <span className="text-[11px] text-slate-500 font-mono">
+            {nodeSummaries.length} {nodeSummaries.length === 1 ? 'node' : 'nodes'}
+          </span>
+        </div>
+
+        <div className="space-y-2">
+          {nodeSummaries.map((node) => {
+            const allActive = node.active === node.total;
+            const dotClass = allActive
+              ? 'bg-emerald-400'
+              : node.active > 0
+              ? 'bg-amber-400'
+              : 'bg-slate-500';
+
+            return (
+              <div
+                key={node.node}
+                className="p-3 rounded-xl border border-white/[0.06] bg-[#14141c] flex items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dotClass}`} />
+                  <div className="min-w-0">
+                    <h3 className="text-xs sm:text-sm font-bold text-white font-mono">
+                      {node.node}
+                    </h3>
+                    <span className="block text-[10px] text-slate-500 mt-0.5 truncate">
+                      {node.region}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 sm:gap-4 text-right flex-shrink-0">
+                  <div>
+                    <span className="block text-[10px] uppercase tracking-wider text-slate-500">
+                      Online
+                    </span>
+                    <strong className="block text-xs font-mono font-bold text-white mt-0.5">
+                      {node.active}/{node.total}
+                    </strong>
+                  </div>
+                  <div className="hidden xs:block">
+                    <span className="block text-[10px] uppercase tracking-wider text-slate-500">
+                      Memory
+                    </span>
+                    <strong className="block text-xs font-mono font-bold text-white mt-0.5">
+                      {formatMiB(node.memoryMiB)}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <p className="text-[11px] text-slate-500 leading-relaxed pt-1">
+          Aggregated live from your {services.length} services: online instances and allocated
+          memory per node.
+        </p>
+      </section>
 
       {/* ======================================================== */}
       {/* 3. FILTER TABS (Strict match to Screenshot_20260927-175845.png) */}

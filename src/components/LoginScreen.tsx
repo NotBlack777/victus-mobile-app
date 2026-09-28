@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle, Sparkles, Shield, Zap } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useToast } from './Toast.tsx';
+import { BackgroundFX } from './BackgroundFX.tsx';
 
 export const LoginScreen: React.FC = () => {
   const { signIn, signUp } = useAuth();
@@ -64,6 +65,9 @@ export const LoginScreen: React.FC = () => {
 
   return (
     <div className="min-h-screen w-full flex flex-col justify-between bg-[#0a0a0f] text-white relative overflow-hidden select-none">
+      {/* Animated backdrop, matching the signed-in shell */}
+      <BackgroundFX />
+
       {/* Background radial ambient glow matching Victus design system */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[34rem] h-[34rem] rounded-full bg-violet-600/15 blur-[120px]" />

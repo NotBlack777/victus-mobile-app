@@ -224,3 +224,118 @@ body::before {
 /* Notched / gesture-bar phones: keep chrome clear of system UI */
 .pt-safe { padding-top: env(safe-area-inset-top, 0px); }
 .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* ============================================================
+   Animated backdrop (BackgroundFX)
+   Compositor-only: everything moves with `transform`/`opacity`, so the
+   layer costs no repaints while idle. No filter: blur() — it is
+   disproportionately expensive on mobile GPUs for large areas.
+   ============================================================ */
+.bgfx {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  contain: paint;
+}
+
+/* --- Aurora: drifting colour fields ------------------------------------- */
+.bgfx-blob {
+  position: absolute;
+  width: 78%;
+  height: 78%;
+  border-radius: 50%;
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-duration: 30s;
+}
+
+.bgfx-blob-1 {
+  top: -20%;
+  left: -24%;
+  animation-name: bgfx-drift-1;
+}
+
+.bgfx-blob-2 {
+  bottom: -24%;
+  right: -26%;
+  animation-name: bgfx-drift-2;
+  animation-duration: 38s;
+}
+
+.bgfx-blob-3 {
+  top: 30%;
+  left: 22%;
+  width: 60%;
+  height: 60%;
+  animation-name: bgfx-drift-3;
+  animation-duration: 46s;
+}
+
+@keyframes bgfx-drift-1 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(40%, 24%, 0) scale(1.16); }
+}
+
+@keyframes bgfx-drift-2 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.08); }
+  50% { transform: translate3d(-36%, -22%, 0) scale(0.92); }
+}
+
+@keyframes bgfx-drift-3 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(0.96); }
+  50% { transform: translate3d(-20%, 32%, 0) scale(1.2); }
+}
+
+/* --- Mesh: one grid cell of travel, so the loop is seamless ------------- */
+.bgfx-mesh-wrap {
+  position: absolute;
+  inset: 0;
+  -webkit-mask-image: radial-gradient(ellipse 85% 62% at 50% 38%, #000 10%, transparent 78%);
+  mask-image: radial-gradient(ellipse 85% 62% at 50% 38%, #000 10%, transparent 78%);
+}
+
+.bgfx-mesh {
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  top: -44px;
+  bottom: 0;
+  will-change: transform;
+  animation: bgfx-mesh-scroll 16s linear infinite;
+}
+
+@keyframes bgfx-mesh-scroll {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(0, 44px, 0); }
+}
+
+.bgfx-mesh-glow {
+  position: absolute;
+  inset: 0 0 42% 0;
+  animation: bgfx-glow 12s ease-in-out infinite;
+}
+
+@keyframes bgfx-glow {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 0.95; }
+}
+
+/* --- Starfield: canvas, drawn once when motion is off ------------------- */
+.bgfx-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Motion disabled (in-app toggle or the OS preference): hold still. */
+.bgfx-static .bgfx-blob,
+.bgfx-static .bgfx-mesh,
+.bgfx-static .bgfx-mesh-glow {
+  animation: none !important;
+}

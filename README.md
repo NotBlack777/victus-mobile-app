@@ -18,11 +18,15 @@ Unified web application and mobile ecosystem shell for **Victus Cloud** (`com.vi
   - **Live Web / Iframe Mode**: Toggle between native interactive panel view and live iframe embed with fallback error handling.
 - **Appearance & Theme Customization (Settings)**:
   - Live preview banner that reflects changes instantly.
-  - Preset options: **Purple → Black** (brand identity) and **Blue → Teal** (classic legacy gradient).
+  - Preset options: **Purple → Black** (brand identity), **Blue → Teal**, **Emerald → Night**, **Ember → Night**, and **Slate → Night**.
   - Custom gradient builder: start color, end color, and solid color toggle.
   - 16-color curated palette plus hex color input (`#RRGGBB`) with real-time validation.
+  - **Animated backdrops**: Aurora (drifting light fields), Mesh (scanned node grid), Starfield (particle canvas), or Off — all hold still when animations are reduced.
   - **Motion & Performance**: Reduce animations switch for smooth rendering on any device.
   - **Display Modes**: Dark, Light, or Follow System.
+- **Node Infrastructure Panel** (Control → dashboard): online counts and allocated memory per node (SG-1, SG-2, US-East, EU-Central, Frankfurt-KVM), aggregated live from the service list so it can never disagree with the server rows.
+- **Launcher Shortcuts**: long-press the app icon for *Check for updates*, *My Servers*, *Billing*, and *Support*.
+- **Update Badge**: the app quietly checks the release feed a few times a day; when a newer build exists, the tools menu announces it.
 - **Tools Overflow Menu**:
   - Settings (Appearance)
   - Open in external browser
@@ -51,6 +55,9 @@ bun run build
 # Updater logic tests + web tests
 ./gradlew :app:testDebugUnitTest
 bun test
+
+# Headless WebView regression check (needs playwright + chromium):
+node scripts/verify-webview.mjs app/build/generated/reactAssets
 ```
 
 ## 🔑 Release signing

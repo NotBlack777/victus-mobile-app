@@ -93,12 +93,19 @@ public class MainActivity extends ComponentActivity {
     };
 
     private static final String KEY_SELECTED_TAB = "selected_tab";
+    /** URI scheme used by the launcher shortcuts (res/xml/shortcuts.xml). */
+    private static final String SHORTCUT_SCHEME = "victus";
 
     // ------------------------------------------------------------------- views
 
     private FrameLayout rootView;
     private LinearLayout topBar;
     private ImageButton backButton;
+    private ImageButton toolsButton;
+    /** Dot shown on the tools button when a newer build is known to exist. */
+    private View updateBadge;
+    /** Set when a launcher shortcut asked for the updater directly. */
+    private boolean pendingUpdateSheet;
     private ProgressBar pageProgress;
     private WebView webView;
     private HorizontalScrollView dockScroller;
@@ -178,6 +185,19 @@ public class MainActivity extends ComponentActivity {
             loadUrlInternal(startUrl);
             selectDock(indexForUrl(startUrl), false);
         }
+
+        // "Check for updates" launcher shortcut: open the sheet once the first
+        // frame is drawn, so the dialog isn't attached to an unpainted window.
+        if (pendingUpdateSheet) {
+            pendingUpdateSheet = false;
+            webView.postDelayed(() -> {
+                if (!isFinishing() && !isDestroyed()) UpdateSheet.show(this);
+            }, 400);
+        }
+
+        // Quietly ask the release feed whether a newer build exists, so the
+        // tools menu can badge itself. Never blocks the UI and never prompts.
+        startBackgroundUpdateCheck();
     }
 
     @Override
@@ -187,6 +207,10 @@ public class MainActivity extends ComponentActivity {
         if (url != null) {
             loadUrlInternal(url);
             selectDock(indexForUrl(url), false);
+        }
+        if (pendingUpdateSheet) {
+            pendingUpdateSheet = false;
+            UpdateSheet.show(this);
         }
     }
 
@@ -210,6 +234,8 @@ public class MainActivity extends ComponentActivity {
     protected void onResume() {
         super.onResume();
         if (webView != null) webView.onResume();
+        // An update may have been installed (or found) while we were away.
+        refreshUpdateUi();
     }
 
     @Override
@@ -224,12 +250,35 @@ public class MainActivity extends ComponentActivity {
         super.onDestroy();
     }
 
-    /** Deep links (https://*.victuscloud.com) open directly inside the shell. */
+    /**
+     * Deep links (https://*.victuscloud.com) open directly inside the shell, and
+     * the launcher shortcuts use a {@code victus://} URI to ask for a specific
+     * destination without needing a separate activity.
+     */
     private String resolveStartUrl(Intent intent) {
-        if (intent != null && Intent.ACTION_VIEW.equals(intent.getAction()) && intent.getData() != null) {
-            return intent.getData().toString();
+        if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction()) || intent.getData() == null) {
+            return null;
         }
-        return null;
+
+        Uri data = intent.getData();
+        if (SHORTCUT_SCHEME.equals(data.getScheme())) {
+            String destination = data.getHost() == null ? "" : data.getHost();
+            switch (destination) {
+                case "updates":
+                    pendingUpdateSheet = true;
+                    return null; // stay on Home, then open the sheet
+                case "servers":
+                    return "https://control.victuscloud.com";
+                case "billing":
+                    return "https://billing.victuscloud.com";
+                case "support":
+                    return "https://victuscloud.com/support";
+                default:
+                    return null;
+            }
+        }
+
+        return data.toString();
     }
 
     // ========================================================= refresh rate
@@ -360,7 +409,28 @@ public class MainActivity extends ComponentActivity {
         tools.setBackgroundResource(ripple);
         tools.setContentDescription(getString(R.string.action_tools));
         tools.setOnClickListener(v -> showToolsMenu());
-        topBar.addView(tools, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        toolsButton = tools;
+
+        // The badge is a sibling of the button inside a wrapper, so it sits in
+        // the corner without touching the button's own 48dp touch target.
+        FrameLayout toolsWrap = new FrameLayout(this);
+        toolsWrap.addView(tools, new FrameLayout.LayoutParams(dp(48), dp(48)));
+
+        GradientDrawable dot = new GradientDrawable();
+        dot.setShape(GradientDrawable.OVAL);
+        dot.setColor(colorOf(R.color.brand_a));
+
+        updateBadge = new View(this);
+        updateBadge.setBackground(dot);
+        updateBadge.setVisibility(View.GONE);
+
+        FrameLayout.LayoutParams badgeParams = new FrameLayout.LayoutParams(dp(9), dp(9));
+        badgeParams.gravity = Gravity.TOP | Gravity.END;
+        badgeParams.topMargin = dp(10);
+        badgeParams.rightMargin = dp(10);
+        toolsWrap.addView(updateBadge, badgeParams);
+
+        topBar.addView(toolsWrap, new LinearLayout.LayoutParams(dp(48), dp(48)));
 
         // Hairline divider under the top bar.
         View divider = new View(this);
@@ -616,8 +686,46 @@ public class MainActivity extends ComponentActivity {
 
     // ========================================================= tools & session
 
+    /**
+     * Silent availability check: reads the release feed off the main thread and
+     * updates the tools-menu badge. Failures are ignored on purpose — being
+     * offline is normal, and a stale "no update" answer is better than an error.
+     */
+    void startBackgroundUpdateCheck() {
+        if (UpdateChecker.checkedRecently(this)) {
+            refreshUpdateUi();
+            return;
+        }
+
+        final android.content.Context appContext = getApplicationContext();
+        UpdateChecker.IO.execute(() -> {
+            try {
+                UpdateChecker.rememberAvailable(appContext, UpdateChecker.checkForUpdate(appContext));
+            } catch (Exception unreachable) {
+                // Offline / rate-limited: keep whatever the last check knew.
+                return;
+            }
+            UpdateChecker.MAIN.post(this::refreshUpdateUi);
+        });
+    }
+
+    /** Points the tools button at the version a background check found. */
+    void refreshUpdateUi() {
+        String available = UpdateChecker.availableVersionName(this);
+
+        if (updateBadge != null) {
+            updateBadge.setVisibility(available == null ? View.GONE : View.VISIBLE);
+        }
+        if (toolsButton != null) {
+            toolsButton.setContentDescription(available == null
+                    ? getString(R.string.action_tools)
+                    : getString(R.string.tools_update_available, available));
+        }
+    }
+
     /** The "Tools" overflow menu — theme-aware dialog, no custom pixel math. */
     void showToolsMenu() {
+        String available = UpdateChecker.availableVersionName(this);
         final String[] items = {
                 getString(R.string.tools_settings),
                 getString(R.string.tools_open_browser),
@@ -627,7 +735,9 @@ public class MainActivity extends ComponentActivity {
                 getString(R.string.tools_support),
                 getString(R.string.tools_status),
                 getString(R.string.tools_marketplace),
-                getString(R.string.tools_check_updates),
+                available == null
+                        ? getString(R.string.tools_check_updates)
+                        : getString(R.string.tools_check_updates_available, available),
                 getString(R.string.tools_clear_session),
         };
         new AlertDialog.Builder(this)

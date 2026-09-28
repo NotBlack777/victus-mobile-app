@@ -213,6 +213,68 @@ export const REAL_VICTUS_SERVICES: VictusService[] = [
   },
 ];
 
+/**
+ * Datacentre each node id belongs to, matching the cluster names the app
+ * already reports under Status → node clusters.
+ */
+export const NODE_REGIONS: Record<string, string> = {
+  'SG-1': 'Singapore',
+  'SG-2': 'Singapore',
+  'US-East': 'Virginia, US',
+  'EU-Central': 'Frankfurt, EU',
+  'Frankfurt-KVM': 'Frankfurt, EU',
+};
+
+export interface NodeSummary {
+  node: string;
+  region: string;
+  total: number;
+  active: number;
+  memoryMiB: number;
+  diskMiB: number;
+}
+
+/** "8,192 MiB" -> 8192. Non-numeric input yields 0 rather than NaN. */
+export function parseMiB(value: string): number {
+  const digits = value.replace(/[^0-9]/g, '');
+  return digits ? Number(digits) : 0;
+}
+
+/**
+ * Groups the fleet by node. Everything here is aggregated from the service
+ * list, so the infrastructure view can never disagree with the server rows.
+ */
+export function getNodeSummaries(services: VictusService[]): NodeSummary[] {
+  const byNode = new Map<string, NodeSummary>();
+
+  for (const service of services) {
+    const existing = byNode.get(service.node) ?? {
+      node: service.node,
+      region: NODE_REGIONS[service.node] ?? 'Victus Cloud',
+      total: 0,
+      active: 0,
+      memoryMiB: 0,
+      diskMiB: 0,
+    };
+
+    existing.total += 1;
+    if (service.status === 'ACTIVE') existing.active += 1;
+    existing.memoryMiB += parseMiB(service.memory);
+    existing.diskMiB += parseMiB(service.disk);
+
+    byNode.set(service.node, existing);
+  }
+
+  return [...byNode.values()].sort(
+    (a, b) => b.active - a.active || b.total - a.total || a.node.localeCompare(b.node)
+  );
+}
+
+/** "8192" -> "8,192 MiB" */
+export function formatMiB(value: number): string {
+  return `${value.toLocaleString('en-US')} MiB`;
+}
+
 export interface FleetStats {
   gameServersCount: number;
   vpsCount: number;

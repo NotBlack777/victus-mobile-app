@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press shortcuts on the launcher icon. Each deep-links into the shell
+     via a victus:// URI that MainActivity.resolveStartUrl() interprets, so no
+     extra launcher activity is needed. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <shortcut
+        android:shortcutId="updates"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_updates"
+        android:shortcutShortLabel="@string/shortcut_updates_short"
+        android:shortcutLongLabel="@string/shortcut_updates_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="victus://updates"
+            android:targetPackage="com.victuscloud.ecosystem"
+            android:targetClass="com.victuscloud.ecosystem.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="servers"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_servers"
+        android:shortcutShortLabel="@string/shortcut_servers_short"
+        android:shortcutLongLabel="@string/shortcut_servers_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="victus://servers"
+            android:targetPackage="com.victuscloud.ecosystem"
+            android:targetClass="com.victuscloud.ecosystem.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="billing"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_billing"
+        android:shortcutShortLabel="@string/shortcut_billing_short"
+        android:shortcutLongLabel="@string/shortcut_billing_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="victus://billing"
+            android:targetPackage="com.victuscloud.ecosystem"
+            android:targetClass="com.victuscloud.ecosystem.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="support"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_support"
+        android:shortcutShortLabel="@string/shortcut_support_short"
+        android:shortcutLongLabel="@string/shortcut_support_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="victus://support"
+            android:targetPackage="com.victuscloud.ecosystem"
+            android:targetClass="com.victuscloud.ecosystem.MainActivity" />
+    </shortcut>
+</shortcuts>
