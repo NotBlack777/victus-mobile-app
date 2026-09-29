@@ -36,11 +36,11 @@ final class VictusWebViewClient extends WebViewClient {
     private static final String ASSETS_HOST = "appassets.androidplatform.net";
     private static final String ASSETS_HOST_URL = "https://" + ASSETS_HOST;
 
-    private final MainActivity activity;
+    private final VictusPageHost host;
     private final WebViewAssetLoader assetLoader;
 
-    VictusWebViewClient(MainActivity activity, WebViewAssetLoader assetLoader) {
-        this.activity = activity;
+    VictusWebViewClient(VictusPageHost host, WebViewAssetLoader assetLoader) {
+        this.host = host;
         this.assetLoader = assetLoader;
     }
 
@@ -62,7 +62,7 @@ final class VictusWebViewClient extends WebViewClient {
             // The bundled home screen and the top-bar dock always stay in-app.
             String from = view.getUrl();
             boolean fromBundledHome = from != null && from.startsWith(ASSETS_HOST_URL);
-            if (!fromBundledHome && ThemeManager.isOpenLinksExternally(activity)) {
+            if (!fromBundledHome && host.shouldOpenInternalExternally()) {
                 return openExternally(uri);
             }
             return false; // stay inside the app
@@ -109,25 +109,25 @@ final class VictusWebViewClient extends WebViewClient {
                 intent = Intent.parseUri(uri.toString(), Intent.URI_INTENT_SCHEME);
                 if (intent.getPackage() != null) {
                     try {
-                        activity.startActivity(new Intent(Intent.ACTION_VIEW,
+                        host.context().startActivity(new Intent(Intent.ACTION_VIEW,
                                 Uri.parse("market://details?id=" + intent.getPackage())));
                         return true;
                     } catch (Exception ignored) { /* Play Store absent */ }
                 }
                 String fallback = intent.getStringExtra("browser_fallback_url");
                 if (fallback != null) {
-                    activity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(fallback)));
+                    host.context().startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(fallback)));
                     return true;
                 }
             } else {
                 intent = new Intent(Intent.ACTION_VIEW, uri);
             }
             intent.addCategory(Intent.CATEGORY_BROWSABLE);
-            activity.startActivity(intent);
+            host.context().startActivity(intent);
         } catch (Exception e) {
             // No handler installed for this scheme — stay put, inform the user.
-            android.widget.Toast.makeText(activity,
-                    activity.getString(R.string.no_app_to_handle),
+            android.widget.Toast.makeText(host.context(),
+                    host.context().getString(R.string.no_app_to_handle),
                     android.widget.Toast.LENGTH_SHORT).show();
         }
         return true;
@@ -135,19 +135,19 @@ final class VictusWebViewClient extends WebViewClient {
 
     @Override
     public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-        activity.onPageLoadStarted(url);
+        host.onPageLoadStarted(url);
     }
 
     @Override
     public void onPageFinished(WebView view, String url) {
-        activity.onPageLoadFinished(url);
+        host.onPageLoadFinished(url);
     }
 
     @Override
     public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
         if (!request.isForMainFrame()) return; // subresource failures don't justify an overlay
         CharSequence description = error.getDescription();
-        activity.showError(
+        host.showError(
                 (description == null ? "" : description)
                         + " (code " + error.getErrorCode() + ")",
                 request.getUrl().toString());
@@ -159,7 +159,7 @@ final class VictusWebViewClient extends WebViewClient {
         if (!request.isForMainFrame()) return;
         int status = errorResponse.getStatusCode();
         if (status >= 400) {
-            activity.showError("HTTP " + status + " — " + errorResponse.getReasonPhrase(),
+            host.showError("HTTP " + status + " — " + errorResponse.getReasonPhrase(),
                     request.getUrl().toString());
         }
     }
@@ -216,7 +216,7 @@ final class VictusWebViewClient extends WebViewClient {
         // Victus certificate the device's root store doesn't know yet. Scoped
         // to *.victuscloud.com AND to the two device-side error codes — an
         // expired or mismatched certificate is never auto-accepted.
-        if (isInternal && deviceTrustIssue && ThemeManager.isTrustVictusSsl(activity)) {
+        if (isInternal && deviceTrustIssue && ThemeManager.isTrustVictusSsl(host.context())) {
             handler.proceed();
             return;
         }
@@ -225,26 +225,26 @@ final class VictusWebViewClient extends WebViewClient {
         boolean offerWebViewUpdate;
         switch (code) {
             case SslError.SSL_UNTRUSTED:
-                message = activity.getString(R.string.error_ssl_untrusted);
+                message = host.context().getString(R.string.error_ssl_untrusted);
                 offerWebViewUpdate = true;
                 break;
             case SslError.SSL_NOTYETVALID:
-                message = activity.getString(R.string.error_ssl_notyetvalid);
+                message = host.context().getString(R.string.error_ssl_notyetvalid);
                 offerWebViewUpdate = true;
                 break;
             case SslError.SSL_EXPIRED:
-                message = activity.getString(R.string.error_ssl_expired);
+                message = host.context().getString(R.string.error_ssl_expired);
                 offerWebViewUpdate = false;
                 break;
             case SslError.SSL_IDMISMATCH:
-                message = activity.getString(R.string.error_ssl_mismatch);
+                message = host.context().getString(R.string.error_ssl_mismatch);
                 offerWebViewUpdate = false;
                 break;
             default:
-                message = activity.getString(R.string.error_ssl_generic, code);
+                message = host.context().getString(R.string.error_ssl_generic, code);
                 offerWebViewUpdate = false;
                 break;
         }
-        activity.showSslError(handler, message, url, offerWebViewUpdate, isInternal);
+        host.showSslError(handler, message, url, offerWebViewUpdate, isInternal);
     }
 }

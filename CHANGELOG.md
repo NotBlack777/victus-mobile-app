@@ -1,3 +1,125 @@
+# Changelog — Victus Cloud 2.4.0 (runs on any Android: custom ROMs, real servers)
+
+This release makes the app work the same whether it is installed on a Pixel, a
+GrapheneOS phone, a CalyxOS phone, a LineageOS device without Google services, or
+an /e/OS or DivestOS build — and it makes the control section real.
+
+## Custom-ROM / "universal" support
+
+Nothing in the app needs Google Play Services, and this release makes that a
+checked property rather than an accident:
+
+- **No WebView is no longer a crash.** Some minimal AOSP builds ship none, and
+  users disable it. `new WebView()` throws in that state and kills the process, so
+  the engine is now checked before any of the shell is built and the app shows a
+  native "install a web engine" screen with the right route for the device
+  (Play Store if there is one, F-Droid otherwise — which is where Mulch WebView
+  lives).
+- **"Update WebView" now means *this device's* WebView.** It used to hardcode
+  `com.google.android.webview`, which sent Vanadium (GrapheneOS), LineageOS
+  WebView, CalyxOS Chromium and Mulch users to a listing they cannot install from.
+  The provider is now queried, and when it ships *with the ROM* the app says so
+  ("Vanadium is part of your ROM — update your system to update it") instead of
+  pretending a store can help.
+- **New: Tools → Device & compatibility.** A diagnostics screen that reports the
+  actual build (ROM, Android version, device), the WebView provider and version,
+  whether Google services are present (they are not needed either way), whether
+  Keystore-backed encryption really works on this device (it runs a real
+  seal/open self-test), the current session kind, and a one-tap connection test to
+  `control.victuscloud.com` with the result and latency. The whole report copies to
+the clipboard for a support ticket.
+- **Package visibility declared** (`<queries>`): those lookups return nothing on
+  Android 11+ without it, which would have silently produced "not installed" for
+  every provider on a custom ROM.
+- `RomSupport` classifies the build (GrapheneOS, CalyxOS, LineageOS, /e/OS,
+  DivestOS, crDroid, PixelExperience, ArrowOS, iodéOS, AOSP, stock) and is unit
+tested against the real fingerprint shapes those ROMs stamp.
+
+## Real servers, real power actions
+
+- **The control section now reads the account's own servers** from
+  `GET /api/client` when signed in, mapped into the shape every existing screen
+  already renders. A banner says which fleet is on screen — "Live from
+  control.victuscloud.com" or "Sample fleet — sign in to see your own servers" — so
+  sample data can never be mistaken for a real account.
+- **Power actions are real**: start / stop / restart / kill go to
+  `POST /api/client/servers/{uuid}/power`, and the screen reports what the panel
+  answered. A refused action says why ("Server is suspended.") instead of printing
+  a reassuring fake console line, which is what the old build did.
+- **Live usage**: CPU, memory, disk and uptime come from
+  `GET /api/client/servers/{uuid}/resources`, polled every 5 seconds while the
+  server screen is open.
+- **The console sends real commands** (`POST …/command`) and reports the panel's
+  answer; demo mode no longer pretends a command ran.
+- The native bridge gained `apiPost` for this, with the same client-API allowlist
+  as `apiGet` plus a body size limit, so a page cannot turn it into a general
+  proxy.
+
+## Version
+
+`versionCode 26` / `versionName 2.4.0`.
+
+---
+
+# Changelog — Victus Cloud 2.3.0 (real Victus Cloud authentication)
+
+Sign-in is no longer simulated. The app authenticates against the real panel at
+`control.victuscloud.com`, using the endpoints its own frontend uses, and keeps a
+revocable API key instead of the user's password.
+
+## The contract (verified against the live panel, not assumed)
+
+Everything below was confirmed by probing the running panel and by reading its
+client bundle, so the client is built on observed behaviour:
+
+| Route | Behaviour |
+| --- | --- |
+| `GET /auth/login` | SPA shell carrying `<meta name="csrf-token">`; sets `XSRF-TOKEN` + `pterodactyl_session` (12h) |
+| `POST /auth/login` | JSON `{user, password}` → `{data:{complete:true}}`, or `{data:{complete:false,confirmation_token}}` when 2FA is on |
+| `POST /auth/login/checkpoint` | JSON `{confirmation_token, authentication_code}` finishes 2FA |
+| `POST /auth/password` | Sends a reset link (validation errors come back in the usual envelope) |
+| `POST /auth/register` | **405 — registration is disabled on this panel** |
+| `GET /api/client` | 401 `AuthenticationException` without a bearer token (route exists) |
+| `POST /api/client/account/api-keys` | Mints a key; the secret appears **once** as `meta.secret_token` |
+| `Authorization` | `Bearer <identifier><secret>` — the identifier is prefixed to the secret |
+
+Failures use one envelope, `{"errors":[{"code":…,"detail":…}]}`, and the app
+shows the panel's own `detail` rather than inventing a message.
+
+## What changed
+
+- **Real authentication** (`VictusAuth.java`, `VictusHttp.java`, `VictusApi.java`,
+  `SecureStore.java`): password sign-in with two-factor, sign-in with a panel API
+  key, password reset, restore-on-launch and sign-out that revokes what app
+  created. The password is used for exactly one request and never stored.
+- **The credential never enters the WebView.** An authenticated `GET /api/client…`
+  goes through the native bridge, which attaches the key itself; JavaScript only
+  ever sees the account. The bridge's auth half is additionally refused unless the
+  bundled app (not a dock page) is the page in the shell.
+- **Encrypted at rest** (`SecureStore.java`): the session is sealed with AES-256-GCM
+  under an Android Keystore key, so it is unreadable on any other device and a
+  tampered payload fails to open rather than being parsed. No new dependency.
+- **No fabricated sessions left.** `authService` no longer accepts any email with a
+  six-character password, no longer derives the role from the email string, and no
+  longer invents an access token. Demo data moved to an explicit, labelled
+  `signInDemo()` path marked `provider: 'demo'` and shown as a "Demo" chip.
+- **Login screen rebuilt** for the real flows: email/username + password, a
+  two-factor step, an API-key alternative, "Forgot password?" that actually sends
+  the reset, and account creation pointed at the billing portal (the panel has no
+  sign-up). It states where the credential lives instead of implying a JWT.
+- **First real panel data**: a signed-in session shows the account's server count
+  from `GET /api/client`.
+- **CSRF handled correctly**: the token comes from the `XSRF-TOKEN` cookie (what
+  the panel's own axios client sends) because Laravel regenerates it on a
+  successful login — the meta token read before signing in is already stale for
+  the next request. Stale-token 419s are retried once, automatically.
+
+## Version
+
+`versionCode 25` / `versionName 2.3.0`.
+
+---
+
 # Changelog — Victus Cloud 2.2.1 (reference UX port + full audit + polish)
 
 The reference web app's **Tools menu** and **Appearance (Settings)** experience,
@@ -98,6 +220,54 @@ bug/perf/polish sweep. Nothing removed; everything still compiles to the same
 - **Updater stays graceful**: background checks already swallow offline/rate-
   limit errors and keep the last known state; the manual check surfaces errors
   in the sheet. Verified unchanged and still passing all 16 unit tests.
+
+## Fixed — "Web View" opens the live portals again
+
+Every "Web View" tab was dead in a shipped APK. `EcosystemFrame` framed
+`/api/proxy?url=…`, which only ever existed as a Vite **dev-server** middleware
+(`vite.config.ts` → `configureServer`), so inside the APK the frame resolved to
+an asset that does not exist; and the portals could never have been framed
+anyway — `control.victuscloud.com` answers `x-frame-options: DENY`, while
+`billing` / `drive` / `victuscloud.com` answer `SAMEORIGIN` plus
+`frame-ancestors 'self'`.
+
+- **`InAppBrowser.java` (new)** — a real in-app browser surface: a second Victus
+  WebView layered over the bundle with its own header (close, title, URL, reload,
+  open-in-browser), brand-tinted progress bar, and an inline error panel that
+  covers the failed page rather than pushing the header around. It shares the
+  shell's cookie jar, so signing in there signs in everywhere, and it reuses the
+  shell's download listener. Closing it restores the bundle with all React state
+  intact — nothing reloads. System back walks the surface's own history first,
+  then closes it.
+- **`window.VictusNative` bridge (new)** — `openWebView(url, title)` and
+  `openBrowser(url)`, the bundled app's only native capability.
+  `addJavascriptInterface` is per-WebView rather than per-origin, so the target is
+  filtered by `InAppLinks`: https only, `*.victuscloud.com` only for the in-app
+  surface, no embedded credentials, non-http schemes refused, and `http://`
+  upgraded to https instead of failing. Calls are dispatched to the UI thread and
+  dropped while the activity is finishing.
+- **`VictusPageHost` (new interface)** — `VictusWebViewClient` now talks to a page
+  host instead of to `MainActivity`, so the browser surface and the shell share
+  exactly one routing/TLS policy and the SSL decision matrix is not duplicated.
+  Inside the browser, internal Victus links stay in the surface; everything else
+  still goes to the system browser.
+- **`WebViewSetup.java` (new)** — one place for the WebSettings both surfaces use
+  (scripts + DOM storage, no file or content access, mixed content refused, the
+  `"; wv"` UA token dropped, algorithmic darkening).
+- **Deliberately narrower, on purpose** — the browser panel offers no "proceed
+  anyway" on a certificate failure; the honest escape hatch is the device browser,
+  which shows its own certificate warning.
+- **Legacy `http://` portal links fixed** — ten hard-coded `http://…victuscloud.com`
+  URLs (Tools menu, Control dashboard, service screen, profile modal,
+  `EcosystemFrame`) became `https://`. This is also what makes the new path work:
+  the app refuses cleartext, so those URLs could only ever have failed.
+- **Verified without a device** — 41 web tests (including a new APK regression
+  asserting the shipped bundle contains no `/api/proxy` and that the DEX really
+  carries the bridge and `InAppBrowser`), 26 JVM tests (10 new for the URL policy),
+  and 20/20 headless WebView checks that drive the "Web View" button through a
+  stubbed bridge. Each live target was then loaded in a mobile-UA Chromium:
+  control, billing, drive (`/login`), website, `/support` and `/status` all answer
+  200 with real rendered content.
 
 ## Optimized / polish (Task 3)
 

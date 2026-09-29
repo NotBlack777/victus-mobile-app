@@ -82,7 +82,8 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({
   };
 
   const displayName = user.user_metadata?.name || user.email.split('@')[0];
-  const role = user.user_metadata?.role || (user.email.includes('admin') ? 'Administrator' : 'Cloud Member');
+  // The role comes from the panel's admin flag, not from a substring of the email.
+  const role = user.user_metadata?.role || 'Cloud Member';
   const avatarUrl = user.user_metadata?.avatar_url;
   const sessionDuration =
     session?.expires_at && session.expires_at > Date.now()
@@ -199,28 +200,41 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({
               </button>
             </div>
 
-            {/* Access Token Row */}
+            {/*
+              Panel credential. There is deliberately nothing to copy here: the API
+              key the app uses against control.victuscloud.com is held by the native
+              layer and never reaches the web app, so this only identifies it.
+            */}
             <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.05] flex items-center justify-between">
               <div className="min-w-0 pr-2">
                 <span className="block text-[10px] uppercase font-semibold text-slate-400">
-                  Access Token (JWT)
+                  Panel Credential
                 </span>
                 <span className="font-mono text-[11px] text-slate-200 truncate block">
-                  {session?.access_token ? `${session.access_token.slice(0, 20)}••••••••` : 'None'}
+                  {session?.provider === 'demo'
+                    ? 'Demo data — no panel session'
+                    : session?.keyMasked
+                      ? `API key ${session.keyMasked}`
+                      : session?.credentialKind === 'session'
+                        ? 'Panel session cookie'
+                        : 'None'}
                 </span>
               </div>
-              <button
-                onClick={() => handleCopy(session?.access_token || '', 'Access Token')}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer flex-shrink-0"
-                title="Copy Access Token"
-              >
-                {copiedField === 'Access Token' ? (
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                ) : (
-                  <Copy className="w-3.5 h-3.5" />
-                )}
-              </button>
             </div>
+
+            {/* Live panel data: the account's server count, straight from /api/client */}
+            {session?.serverCount !== undefined && (
+              <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.05] flex items-center justify-between">
+                <div className="min-w-0 pr-2">
+                  <span className="block text-[10px] uppercase font-semibold text-slate-400">
+                    Servers on this account
+                  </span>
+                  <span className="font-mono text-[11px] text-slate-200 truncate block">
+                    {session.serverCount}
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Token Lifetime */}
             <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.05] flex items-center justify-between text-[11px]">
@@ -242,7 +256,7 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({
 
             <div className="grid grid-cols-2 gap-2">
               <button
-                onClick={() => handleServiceLink('http://control.victuscloud.com/', 'Control Panel', 'control')}
+                onClick={() => handleServiceLink('https://control.victuscloud.com/', 'Control Panel', 'control')}
                 className="p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.06] hover:border-violet-500/30 text-left transition-colors cursor-pointer group"
               >
                 <div className="flex items-center justify-between mb-1">
@@ -254,7 +268,7 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({
               </button>
 
               <button
-                onClick={() => handleServiceLink('http://billing.victuscloud.com', 'Billing & Services', 'billing')}
+                onClick={() => handleServiceLink('https://billing.victuscloud.com', 'Billing & Services', 'billing')}
                 className="p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.06] hover:border-violet-500/30 text-left transition-colors cursor-pointer group"
               >
                 <div className="flex items-center justify-between mb-1">

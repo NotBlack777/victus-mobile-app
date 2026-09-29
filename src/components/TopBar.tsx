@@ -36,7 +36,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   currentTitle = 'Victus Cloud',
 }) => {
   const { isDark, toggleColorMode } = useTheme();
-  const { user, signOut } = useAuth();
+  const { user, signOut, isDemo } = useAuth();
   const { unreadCount } = useNotifications();
 
   // Single Source of Truth Auth Check: Open account profile if authenticated
@@ -132,10 +132,20 @@ export const TopBar: React.FC<TopBarProps> = ({
           </button>
 
           {/* Dynamic Auth State: Authenticated Avatar with Online Presence */}
+          {/* Demo data is labelled wherever the account is shown, so sample data is
+              never mistaken for a real panel session. */}
+          {user && isDemo && (
+            <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide bg-amber-500/15 border border-amber-500/30 text-amber-300">
+              Demo
+            </span>
+          )}
+
           {user ? (
             <div className="flex items-center gap-1">
               <button
                 onClick={handleAvatarTap}
+                aria-label="Account profile"
+                title="Account profile"
                 className="relative w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl border border-violet-500/40 bg-violet-600/20 hover:border-violet-400 active:scale-95 transition-all cursor-pointer flex items-center justify-center p-0.5 shadow-xs"
               >
                 <div className="w-full h-full rounded-[10px] overflow-hidden flex items-center justify-center bg-gradient-to-tr from-violet-700/60 to-indigo-600/60">

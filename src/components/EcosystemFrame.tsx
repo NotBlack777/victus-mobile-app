@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import {
   ExternalLink,
-  Lock,
   CreditCard,
   LifeBuoy,
   Activity,
@@ -14,13 +13,18 @@ import {
   Upload,
   Download,
   FileText,
-  RotateCw,
 } from 'lucide-react';
 import { useToast } from './Toast.tsx';
 import { useTheme } from '../context/ThemeContext.tsx';
 import { ControlDashboard } from './ControlDashboard.tsx';
 import { ServiceControlScreen } from './ServiceControlScreen.tsx';
 import { VictusService, REAL_VICTUS_SERVICES } from '../services/controlData.ts';
+import {
+  PanelServer,
+  fetchServers,
+  toVictusService,
+} from '../services/panelApi.ts';
+import { useAuth } from '../context/AuthContext.tsx';
 import { openVictusLink } from '../utils/navigation.ts';
 
 interface EcosystemFrameProps {
@@ -40,6 +44,7 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
 }) => {
   const { showToast } = useToast();
   const { config } = useTheme();
+  const { session } = useAuth();
 
   const isControl =
     url.includes('control.victuscloud.com') ||
@@ -50,28 +55,67 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
   const isSupport = url.includes('/support');
   const isStatus = url.includes('/status');
 
-  // Direct live web viewer or native panel view
-  const [viewMode, setViewMode] = useState<'iframe' | 'app'>(isControl ? 'app' : 'iframe');
-  const [iframeError, setIframeError] = useState(false);
-  const [iframeKey, setIframeKey] = useState(0);
-  const [isIframeLoading, setIsIframeLoading] = useState(true);
-
   // Selected service for the per-server control screen
   const [selectedService, setSelectedService] = useState<VictusService | null>(null);
 
   // Live fleet state so power actions in the per-server screen are reflected
   // in the dashboard list and its stats (previously the list never updated).
   const [serviceStates, setServiceStates] = useState<Record<string, VictusService['status']>>({});
-  const services = useMemo(
-    () =>
-      REAL_VICTUS_SERVICES.map((srv) => ({
-        ...srv,
-        status: serviceStates[srv.id] ?? srv.status,
-      })),
-    [serviceStates]
+
+  /**
+   * The signed-in account's own servers, straight from control.victuscloud.com
+   * (`GET /api/client`). Null while signed out or before the first load, in which
+   * case the sample fleet is shown — labelled as sample data, never passed off as
+   * the user's own.
+   */
+  const [liveServers, setLiveServers] = useState<PanelServer[] | null>(null);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const isLiveAccount = session?.provider === 'victus';
+
+  const refreshServers = useCallback(async () => {
+    // fetchServers() resolves rather than throwing, so this cannot leave an
+    // unhandled rejection behind when the panel is unreachable.
+    const result = await fetchServers();
+    if (result.data) {
+      setLiveServers(result.data);
+      setLiveError(null);
+    } else {
+      setLiveError(result.error);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Only a real panel session has servers to read; demo mode keeps its samples.
+    if (!isLiveAccount) {
+      setLiveServers(null);
+      setLiveError(null);
+      return;
+    }
+    let cancelled = false;
+    void refreshServers().then(() => {
+      if (cancelled) return;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isLiveAccount, session?.user.id, refreshServers]);
+
+  const liveServices = useMemo(
+    () => (liveServers ? liveServers.map((server, index) => toVictusService(server, index)) : null),
+    [liveServers]
   );
 
+  const services = useMemo(() => {
+    if (liveServices) return liveServices;
+    return REAL_VICTUS_SERVICES.map((srv) => ({
+      ...srv,
+      status: serviceStates[srv.id] ?? srv.status,
+    }));
+  }, [liveServices, serviceStates]);
+
   const handleUpdateServiceStatus = (serviceId: string, status: VictusService['status']) => {
+    // For a live account the panel is the source of truth; the list is re-read
+    // after the action instead of being guessed at locally.
     setServiceStates((prev) => ({ ...prev, [serviceId]: status }));
   };
 
@@ -90,33 +134,11 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
     { id: '#VT-9772', subject: 'Custom domain DNS and SRV record verification for survival.victusmc.net', status: 'Resolved', dept: 'Networking' },
   ]);
 
-  useEffect(() => {
-    setIframeError(false);
-    setIsIframeLoading(true);
-    if (isControl) {
-      setViewMode('app');
-    } else {
-      setViewMode('iframe');
-    }
-  }, [url, isControl]);
-
-  const handleOpenExternal = () => {
-    openVictusLink(url, {
-      openLinksExternally: config.openLinksExternally,
-      onNavigateInApp: onNavigate,
-      showToast,
-      title,
-    });
-  };
-
-  const reloadIframe = () => {
-    setIsIframeLoading(true);
-    setIframeKey((prev) => prev + 1);
-    setIframeError(false);
-    showToast('Reloading page…');
-  };
-
-  const iframeSrc = `/api/proxy?url=${encodeURIComponent(url)}`;
+  /**
+   * The app is https-only — cleartext is refused by the network security config,
+   * and the bundles still carry legacy http:// portal links, so upgrade here.
+   */
+  const liveUrl = () => url.replace(/^http:\/\//i, 'https://');
 
   // Safe hostname display: never crash on a malformed/relative URL
   const displayHostname = (() => {
@@ -127,9 +149,42 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
     }
   })();
 
+  /**
+   * "Web View": the live portal in the app's own browser surface.
+   *
+   * These pages cannot be framed — control.victuscloud.com answers
+   * `x-frame-options: DENY`, and billing/drive/victuscloud.com answer SAMEORIGIN
+   * plus `frame-ancestors 'self'` — which is why the old /api/proxy iframe could
+   * never render them (and why no dev server is involved any more). A real
+   * WebView can, with the user's real cookies and POST logins, so the native
+   * shell opens one via window.VictusNative. A browser build falls back to a tab.
+   */
+  const openWebView = () => {
+    const target = liveUrl();
+    if (window.VictusNative?.openWebView) {
+      window.VictusNative.openWebView(target, title || displayHostname);
+      showToast(`Opening ${displayHostname} in the app browser…`);
+      return;
+    }
+    window.open(target, '_blank', 'noopener,noreferrer');
+    showToast(`Opening ${displayHostname} in your browser…`);
+  };
+
+  /** Hands the live page to the device browser (never back into the bundle). */
+  const handleOpenExternal = () => {
+    const target = liveUrl();
+    if (window.VictusNative?.openBrowser) {
+      window.VictusNative.openBrowser(target);
+      showToast('Opening in your browser…');
+      return;
+    }
+    window.open(target, '_blank', 'noopener,noreferrer');
+    showToast('Opening in your browser…');
+  };
+
   return (
     <div className="flex-1 w-full flex flex-col relative select-none bg-[var(--bg)] text-[var(--text)]">
-      {/* View Switcher Top Bar for Web/Native Panels */}
+      {/* Panel header: title, "Web View" (the live site) and open-in-browser. */}
       <div
         className="w-full flex items-center justify-between px-3 py-2 border-b text-xs transition-colors backdrop-blur-md"
         style={{
@@ -145,24 +200,16 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5">
-          {viewMode === 'iframe' && (
-            <button
-              onClick={reloadIframe}
-              title="Reload Frame"
-              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
-            >
-              <RotateCw className="w-3.5 h-3.5" />
-            </button>
-          )}
           <button
-            onClick={() => setViewMode(viewMode === 'iframe' ? 'app' : 'iframe')}
-            className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] text-slate-300 hover:text-white transition-colors cursor-pointer"
+            onClick={openWebView}
+            title={`Open the live ${displayHostname} site in the app browser`}
+            className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] text-slate-200 hover:text-white transition-colors cursor-pointer"
           >
-            {viewMode === 'iframe' ? 'Switch to App View' : 'Switch to Web View'}
+            Web View
           </button>
           <button
             onClick={handleOpenExternal}
-            title={config.openLinksExternally ? 'Open in External Browser' : 'Open in Browser (Toggle in Settings)'}
+            title="Open the live site in the device browser"
             className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
           >
             <ExternalLink className="w-3.5 h-3.5" />
@@ -170,62 +217,8 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
         </div>
       </div>
 
-      {/* Primary View: Live Web iframe */}
-      {viewMode === 'iframe' && (
-        <div className="flex-1 w-full relative min-h-0 flex flex-col">
-          {isIframeLoading && !iframeError && (
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#0a0a0f]/90 backdrop-blur-xs">
-              <div className="w-8 h-8 rounded-full border-2 border-violet-500 border-t-transparent animate-spin mb-3" />
-              <p className="text-xs text-slate-300 font-medium tracking-wide">
-                Connecting to {displayHostname}…
-              </p>
-            </div>
-          )}
-
-          {iframeError ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mb-3">
-                <Lock className="w-6 h-6" />
-              </div>
-              <h3 className="font-bold text-base text-white">Browser Security Protected</h3>
-              <p className="text-xs text-slate-400 max-w-sm mt-1 mb-4 leading-relaxed">
-                This endpoint requires direct browser security credentials. Use App Mode for native management or open directly in your browser.
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setViewMode('app')}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-violet-600 hover:bg-violet-500 cursor-pointer"
-                >
-                  Open App Tools
-                </button>
-                <button
-                  onClick={handleOpenExternal}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-300 bg-white/[0.04] border border-white/[0.08] hover:text-white cursor-pointer"
-                >
-                  Open Browser
-                </button>
-              </div>
-            </div>
-          ) : (
-            <iframe
-              key={iframeKey}
-              src={iframeSrc}
-              title={title}
-              className="w-full flex-1 border-none m-0 p-0 block bg-[#0a0a0f] min-h-0"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-              onLoad={() => setIsIframeLoading(false)}
-              onError={() => {
-                setIsIframeLoading(false);
-                setIframeError(true);
-              }}
-            />
-          )}
-        </div>
-      )}
-
-      {/* Alternative View: Native App Experience */}
-      {viewMode === 'app' && (
-        <div className="flex-1 w-full overflow-y-auto no-scrollbar">
+      {/* Native panel view — the live site is one tap away via "Web View". */}
+      <div className="flex-1 w-full overflow-y-auto no-scrollbar">
           {/* ======================================================== */}
           {/* CONTROL TAB (Dashboard / Fleet Overview or Service Detail) */}
           {/* ======================================================== */}
@@ -235,12 +228,17 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
                 service={services.find((s) => s.id === selectedService.id) ?? selectedService}
                 onBack={() => setSelectedService(null)}
                 onUpdateServiceStatus={handleUpdateServiceStatus}
+                live={Boolean(liveServices)}
+                onRefreshServers={refreshServers}
               />
             ) : (
               <ControlDashboard
                 services={services}
                 onSelectService={(srv) => setSelectedService(srv)}
                 onNavigateTab={onNavigate}
+                isLive={Boolean(liveServices)}
+                liveError={liveError}
+                onRefreshServers={refreshServers}
               />
             )
           ) : isBilling ? (
@@ -263,7 +261,7 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
                 </div>
                 <button
                   onClick={() =>
-                    openVictusLink('http://billing.victuscloud.com', {
+                    openVictusLink('https://billing.victuscloud.com', {
                       openLinksExternally: config.openLinksExternally,
                       onNavigateInApp: onNavigate,
                       showToast,
@@ -509,8 +507,7 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
               </div>
             </div>
           )}
-        </div>
-      )}
+      </div>
     </div>
   );
 };

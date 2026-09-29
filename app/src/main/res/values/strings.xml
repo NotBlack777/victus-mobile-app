@@ -12,6 +12,13 @@
 
     <string name="action_back">Back</string>
     <string name="action_refresh">Refresh</string>
+
+    <!-- In-app browser surface (the live Web View behind the bundled app's
+         "Web View" action; the portals cannot be framed, see InAppBrowser). -->
+    <string name="browser_title">Victus Cloud</string>
+    <string name="browser_close">Close live view</string>
+    <string name="browser_reload">Reload this page</string>
+    <string name="browser_open_external">Open in browser</string>
     <string name="action_tools">Tools</string>
 
     <string name="tools_open_browser">Open in browser</string>
@@ -161,6 +168,46 @@
         <item>Root</item>
         <item>Installer</item>
     </string-array>
+
+    <!-- Device & compatibility (custom ROMs: GrapheneOS, CalyxOS, LineageOS, …) -->
+    <string name="tools_device_compat">Device &amp; compatibility</string>
+    <string name="compat_title">Device &amp; compatibility</string>
+    <string name="compat_subtitle">What this app needs from your device — checked, not assumed.</string>
+    <string name="compat_section_os">System</string>
+    <string name="compat_section_engine">Web engine</string>
+    <string name="compat_section_security">Security &amp; storage</string>
+    <string name="compat_section_panel">Victus Cloud panel</string>
+    <string name="compat_row_build">Build</string>
+    <string name="compat_row_device">Device</string>
+    <string name="compat_row_webview">WebView provider</string>
+    <string name="compat_row_google">Google services</string>
+    <string name="compat_row_keystore">Encrypted storage</string>
+    <string name="compat_row_session">Session</string>
+    <string name="compat_ok">OK</string>
+    <string name="compat_warn">Limited</string>
+    <string name="compat_gms_present">Play Services installed</string>
+    <string name="compat_gms_absent">Not installed — not needed</string>
+    <string name="compat_keystore_ok">Keystore seal/open works</string>
+    <string name="compat_keystore_limited">Keystore unavailable — app-private storage only</string>
+    <string name="compat_session_key">Signed in with an app key</string>
+    <string name="compat_session_cookie">Signed in with a panel session</string>
+    <string name="compat_session_none">Not signed in</string>
+    <string name="compat_custom_rom_note">This is a community AOSP build. The app needs no Google services, so everything works here; the WebView is whatever your ROM ships.</string>
+    <string name="compat_test_connection">Test panel connection</string>
+    <string name="compat_test_running">Contacting control.victuscloud.com…</string>
+    <string name="compat_copy_report">Copy report</string>
+    <string name="compat_report_copied">Compatibility report copied</string>
+    <string name="compat_done">Done</string>
+
+    <!-- Missing/disabled WebView: some minimal custom ROMs ship none at all. -->
+    <string name="webview_missing_title">No web engine installed</string>
+    <string name="webview_missing_message">This device has no Android System WebView (or it is disabled), so the Victus Cloud interface cannot be drawn. Install one and the app will start normally — no data is lost.</string>
+    <string name="webview_missing_install_play">Install from Play Store</string>
+    <string name="webview_missing_install_fdroid">Install from F-Droid</string>
+    <string name="webview_missing_install_web">Open install page</string>
+    <string name="webview_missing_retry">Check again</string>
+    <!-- Vanadium / LineageOS WebView / CalyxOS Chromium ship with the ROM. -->
+    <string name="webview_updated_by_rom">%1$s is part of your ROM — update your system to update it.</string>
 
     <!-- Long-press launcher shortcuts -->
     <string name="shortcut_updates_short">Check for updates</string>

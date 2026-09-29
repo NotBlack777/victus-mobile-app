@@ -46,6 +46,8 @@ final class ToolsMenu {
     static final int TOOL_MARKETPLACE = 7;
     static final int TOOL_UPDATES = 8;
     static final int TOOL_CLEAR_SESSION = 9;
+    /** Device & compatibility: ROM, WebView provider, Keystore and panel checks. */
+    static final int TOOL_DEVICE_COMPAT = 10;
 
     private static final class Item {
         final int id;
@@ -71,6 +73,7 @@ final class ToolsMenu {
             new Item(TOOL_STATUS, R.string.tools_status, R.drawable.ic_status_24, false),
             new Item(TOOL_MARKETPLACE, R.string.tools_marketplace, R.drawable.ic_marketplace_24, false),
             new Item(TOOL_UPDATES, R.string.tools_check_updates, R.drawable.ic_update_24, false),
+            new Item(TOOL_DEVICE_COMPAT, R.string.tools_device_compat, R.drawable.ic_device_24, false),
             new Item(TOOL_CLEAR_SESSION, R.string.tools_clear_session, R.drawable.ic_clear_session_24, true),
     };
 

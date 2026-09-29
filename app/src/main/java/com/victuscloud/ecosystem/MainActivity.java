@@ -17,13 +17,15 @@ import android.view.Display;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
+import android.content.Context;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
-import android.webkit.WebSettings;
 import android.webkit.WebStorage;
 import android.webkit.WebView;
 import android.widget.FrameLayout;
@@ -46,9 +48,12 @@ import androidx.core.splashscreen.SplashScreen;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
-import androidx.webkit.WebSettingsCompat;
 import androidx.webkit.WebViewAssetLoader;
-import androidx.webkit.WebViewFeature;
+
+import org.json.JSONObject;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Single-activity WebView shell for the Victus Cloud ecosystem.
@@ -68,7 +73,7 @@ import androidx.webkit.WebViewFeature;
  * text uses SP, so the layout scales correctly from mdpi to xxxhdpi and across
  * phones, tablets and foldables. No raw pixel values are used anywhere.</p>
  */
-public class MainActivity extends ComponentActivity {
+public class MainActivity extends ComponentActivity implements VictusPageHost {
 
     // ------------------------------------------------------------------ routes
 
@@ -123,6 +128,31 @@ public class MainActivity extends ComponentActivity {
     private android.webkit.SslErrorHandler pendingSslHandler;
 
     private WebViewAssetLoader assetLoader;
+    /** The in-app browser surface opened by the bundled app's "Web View" action. */
+    private InAppBrowser inAppBrowser;
+    /** Name the bundled React app uses for the native bridge: window.VictusNative. */
+    static final String BRIDGE_NAME = "VictusNative";
+
+    /** Real Victus Cloud authentication; owns the session and the encrypted store. */
+    private VictusAuth victusAuth;
+    /**
+     * Serialises auth work off the UI thread. One thread by design: sign-in,
+     * two-factor and restore must not interleave on the shared cookie jar.
+     */
+    private final ExecutorService authIo = Executors.newSingleThreadExecutor();
+    /**
+     * True while the bundled React app (the only page allowed to use the auth
+     * half of the bridge) is the page in the shell. Updated from the page
+     * callbacks, which run on the UI thread, so the bridge can read it safely
+     * from the WebView's JS thread.
+     */
+    private volatile boolean bundledAppForeground = true;
+    /**
+     * False on a device with no usable WebView, where the shell is never built and a
+     * native "install a web engine" screen is shown instead (see
+     * {@link #showMissingWebViewScreen()}).
+     */
+    private boolean webViewAvailable = true;
     /** -1 = no tab styled yet. Forces the very first {@link #selectDock} call
      *  to actually apply the "selected" style instead of being skipped by the
      *  no-op fast path (which compares against the previous selection). */
@@ -179,6 +209,16 @@ public class MainActivity extends ComponentActivity {
         // Request the panel's highest refresh rate (90/120/144 Hz capable hardware).
         applyPeakRefreshRate();
 
+        // Some minimal AOSP builds ship no WebView at all, and users disable it. In
+        // that state `new WebView(this)` throws and takes the whole process down, so
+        // the engine is checked before any of the shell is built. The app then
+        // explains what to install instead of dying on launch.
+        webViewAvailable = DeviceCompat.isWebViewAvailable(this);
+        if (!webViewAvailable) {
+            showMissingWebViewScreen();
+            return;
+        }
+
         createLayout();
         configureWebView();
 
@@ -230,6 +270,7 @@ public class MainActivity extends ComponentActivity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        if (webView == null) return; // no web engine: nothing to navigate
         String url = resolveStartUrl(intent);
         if (url != null) {
             loadUrlInternal(url);
@@ -245,7 +286,8 @@ public class MainActivity extends ComponentActivity {
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putInt(KEY_SELECTED_TAB, selectedDock);
-        webView.saveState(outState);
+        // Null when the device has no web engine and the fallback screen is showing.
+        if (webView != null) webView.saveState(outState);
     }
 
     @Override
@@ -255,18 +297,25 @@ public class MainActivity extends ComponentActivity {
         // without this the page keeps ticking (and draining battery/CPU) the
         // whole time the app isn't even visible.
         if (webView != null) webView.onPause();
+        if (inAppBrowser != null) inAppBrowser.onHostPause();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         if (webView != null) webView.onResume();
+        if (inAppBrowser != null) inAppBrowser.onHostResume();
         // An update may have been installed (or found) while we were away.
         refreshUpdateUi();
     }
 
     @Override
     protected void onDestroy() {
+        authIo.shutdownNow();
+        if (inAppBrowser != null) {
+            inAppBrowser.close();
+            inAppBrowser = null;
+        }
         if (webView != null) {
             // Detach before destroy so the WebView never outlives its context.
             android.view.ViewGroup parent = (android.view.ViewGroup) webView.getParent();
@@ -671,35 +720,8 @@ public class MainActivity extends ComponentActivity {
      * {@code setSavePassword}. Mixed content is refused outright.
      */
     private void configureWebView() {
-        WebSettings s = webView.getSettings();
-        s.setJavaScriptEnabled(true);
-        s.setDomStorageEnabled(true);
-        s.setDatabaseEnabled(true);
-        s.setMediaPlaybackRequiresUserGesture(false);
-        s.setLoadWithOverviewMode(true);
-        s.setUseWideViewPort(true);
-        s.setBuiltInZoomControls(false);
-        s.setDisplayZoomControls(false);
-        s.setAllowFileAccess(false);     // asset loader serves local content instead
-        s.setAllowContentAccess(false);
-        s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        s.setCacheMode(WebSettings.LOAD_DEFAULT); // bundled React entry point stays cached → instant revisit
-
-        // Ensure modern browser user-agent: remove the "; wv" token so Cloudflare and
-        // modern web applications treat the embedded WebView as a standard Chrome mobile browser.
-        String defaultUa = s.getUserAgentString();
-        if (defaultUa != null && defaultUa.contains("; wv")) {
-            s.setUserAgentString(defaultUa.replace("; wv", ""));
-        }
-
-        // Follow the system dark/light theme instead of forcing one. CSS
-        // prefers-color-scheme handles our own pages; algorithmic darkening
-        // covers third-party pages on WebView versions that support it.
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
-            WebSettingsCompat.setAlgorithmicDarkeningAllowed(s, true);
-        } else if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
-            WebSettingsCompat.setForceDark(s, WebSettingsCompat.FORCE_DARK_AUTO);
-        }
+        // Shared with the in-app browser surface so both WebViews behave alike.
+        WebViewSetup.apply(webView);
 
         assetLoader = new WebViewAssetLoader.Builder()
                 .setDomain("appassets.androidplatform.net")
@@ -713,11 +735,24 @@ public class MainActivity extends ComponentActivity {
         webView.setWebViewClient(new VictusWebViewClient(this, assetLoader));
         webView.setWebChromeClient(new VictusChromeClient(this));
         webView.setDownloadListener(createDownloadListener());
+
+        // The session lives here, not in the WebView: the API key is attached to
+        // panel requests natively and is never handed to JavaScript.
+        victusAuth = new VictusAuth(this);
+
+        // The bundled app's native capabilities: "open this Victus Cloud page in
+        // the in-app browser" plus real Victus Cloud sign-in (see WebAppBridge).
+        webView.addJavascriptInterface(new WebAppBridge(this), BRIDGE_NAME);
     }
 
     // ------------------------------------------------------- client callbacks
 
-    void onPageLoadStarted(String url) {
+    @Override
+    public void onPageLoadStarted(String url) {
+        // Only the bundled page may use the auth half of the bridge; the dock can
+        // navigate this same WebView to victuscloud.com, and those pages must not
+        // inherit the app's panel session.
+        bundledAppForeground = url != null && url.startsWith(ASSETS_ORIGIN);
         hideErrorOverlay();
         pageProgress.animate().cancel();
         pageProgress.setAlpha(1f);
@@ -728,7 +763,8 @@ public class MainActivity extends ComponentActivity {
         selectDock(indexForUrl(url), false);
     }
 
-    void onPageLoadFinished(String url) {
+    @Override
+    public void onPageLoadFinished(String url) {
         pageProgress.animate().alpha(0f).setDuration(220)
                 .withEndAction(() -> pageProgress.setVisibility(View.GONE)).start();
         pullRefresh.setRefreshing(false); // both load-finished and refresh-finished
@@ -740,6 +776,31 @@ public class MainActivity extends ComponentActivity {
 
     void onPageProgress(int newProgress) {
         pageProgress.setProgress(newProgress);
+    }
+
+    // --------------------------------------------------------- VictusPageHost
+
+    /** The shell is its own page host; {@link InAppBrowser} is the other one. */
+    @Override
+    public Context context() {
+        return this;
+    }
+
+    @Override
+    public boolean shouldOpenInternalExternally() {
+        return ThemeManager.isOpenLinksExternally(this);
+    }
+
+    /**
+     * Opens a live Victus Cloud portal in the in-app browser surface. Reached
+     * only from {@link WebAppBridge} (an allowlisted https Victus URL) or from
+     * code that already validated its target.
+     */
+    void showInAppBrowser(String url, String title) {
+        if (inAppBrowser != null || rootView == null) return; // one surface at a time
+        inAppBrowser = new InAppBrowser(this, rootView, assetLoader, url, title,
+                () -> inAppBrowser = null);
+        inAppBrowser.open();
     }
 
     // ========================================================= tools & session
@@ -833,6 +894,9 @@ public class MainActivity extends ComponentActivity {
                 break;
             case ToolsMenu.TOOL_MARKETPLACE:
                 loadUrlInternal("https://victuscloud.com/marketplace");
+                break;
+            case ToolsMenu.TOOL_DEVICE_COMPAT: // ROM / WebView / keystore diagnostics
+                CompatSheet.show(this);
                 break;
             case ToolsMenu.TOOL_UPDATES:
                 UpdateSheet.show(this);
@@ -1090,7 +1154,8 @@ public class MainActivity extends ComponentActivity {
      * single source of truth while the shell is running.
      */
     private void injectThemeIntoWebView() {
-        if (webView == null) return;
+        if (webView == null) return; // no web engine on this device
+
         String url = webView.getUrl();
         if (url == null || !url.startsWith(ASSETS_ORIGIN)) return;
 
@@ -1130,7 +1195,8 @@ public class MainActivity extends ComponentActivity {
         return android.graphics.Color.rgb(r, g, b);
     }
 
-    void showError(String message, String failingUrl) {
+    @Override
+    public void showError(String message, String failingUrl) {
         if (pendingSslHandler != null) {
             pendingSslHandler.cancel();
             pendingSslHandler = null;
@@ -1150,8 +1216,9 @@ public class MainActivity extends ComponentActivity {
      * than a real attack — an "Update WebView" shortcut to the Play Store is
      * shown underneath the buttons.
      */
-    void showSslError(android.webkit.SslErrorHandler handler, String message, String failingUrl,
-                      boolean offerWebViewUpdate, boolean isInternalHost) {
+    @Override
+    public void showSslError(android.webkit.SslErrorHandler handler, String message, String failingUrl,
+                             boolean offerWebViewUpdate, boolean isInternalHost) {
         if (pendingSslHandler != null && pendingSslHandler != handler) {
             pendingSslHandler.cancel();
         }
@@ -1161,6 +1228,17 @@ public class MainActivity extends ComponentActivity {
         }
         errorWebViewUpdateLink.setVisibility(offerWebViewUpdate ? View.VISIBLE : View.GONE);
         displayErrorOverlay(message, failingUrl);
+    }
+
+    /**
+     * The kind of stored session, or null when signed out. Used by the
+     * compatibility screen, which reports it without ever touching the secret.
+     */
+    String signedInKind() {
+        if (victusAuth == null) return null;
+        VictusAuth.Session session = victusAuth.currentSession();
+        if (session == null) return null;
+        return session.isApiKey() ? "api_key" : "session";
     }
 
     private void displayErrorOverlay(String fullMessage, String failingUrl) {
@@ -1175,19 +1253,175 @@ public class MainActivity extends ComponentActivity {
         }
     }
 
-    /** Opens the Play Store listing for Android System WebView, falling back to
-     *  the web listing if the Play Store app itself isn't installed. */
+    /**
+     * Offers an update for <em>this device's</em> web engine.
+     *
+     * <p>The provider is asked for rather than assumed: GrapheneOS ships Vanadium,
+     * LineageOS and /e/OS ship their own WebView, CalyxOS ships Chromium, and plenty
+     * of people run Mulch or Bromite from F-Droid. Sending any of them to
+     * {@code com.google.android.webview} — which is what this used to do — leads to a
+     * listing they cannot install from.</p>
+     *
+     * <p>The install route follows what is actually installed, not the ROM: a Play
+     * Store client means a Play listing works even on GrapheneOS, and no Play Store
+     * means F-Droid (where Mulch lives) or the provider's own page.</p>
+     */
+    /**
+     * The screen a device with no usable web engine gets instead of a crash.
+     *
+     * <p>Built from plain views, since the whole point is that WebView rendering is
+     * unavailable. The install route follows what is actually on the device: the Play
+     * Store when there is one, F-Droid (which ships Mulch WebView) otherwise.</p>
+     */
+    private void showMissingWebViewScreen() {
+        android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(colorOf(R.color.window_bg));
+
+        LinearLayout column = new LinearLayout(this);
+        column.setOrientation(LinearLayout.VERTICAL);
+        column.setGravity(Gravity.CENTER);
+        int pad = dp(28);
+        column.setPadding(pad, pad, pad, pad);
+
+        android.widget.ImageView icon = new android.widget.ImageView(this);
+        icon.setImageResource(R.drawable.ic_device_24);
+        icon.setImageTintList(ColorStateList.valueOf(colorOf(R.color.brand_a)));
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+        iconParams.gravity = Gravity.CENTER_HORIZONTAL;
+        iconParams.bottomMargin = dp(16);
+        icon.setLayoutParams(iconParams);
+        column.addView(icon);
+
+        TextView title = new TextView(this);
+        title.setText(R.string.webview_missing_title);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        title.setTextColor(colorOf(R.color.title_text));
+        title.setGravity(Gravity.CENTER);
+        column.addView(title);
+
+        TextView message = new TextView(this);
+        message.setText(R.string.webview_missing_message);
+        message.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        message.setTextColor(colorOf(R.color.chip_text));
+        message.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams messageParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        messageParams.topMargin = dp(10);
+        messageParams.bottomMargin = dp(22);
+        message.setLayoutParams(messageParams);
+        column.addView(message);
+
+        boolean playStore = DeviceCompat.hasPlayStore(this);
+        boolean fDroid = DeviceCompat.hasFDroid(this);
+        if (playStore) {
+            column.addView(missingWebViewButton(R.string.webview_missing_install_play,
+                    () -> openPlayListing("com.google.android.webview")));
+        }
+        if (fDroid || !playStore) {
+            column.addView(missingWebViewButton(
+                    fDroid ? R.string.webview_missing_install_fdroid
+                            : R.string.webview_missing_install_web,
+                    () -> openExternalUrl(RomSupport.fDroidWebViewUrl())));
+        }
+        column.addView(missingWebViewButton(R.string.webview_missing_retry, this::recreate));
+
+        scroll.addView(column, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        setContentView(scroll);
+    }
+
+    private TextView missingWebViewButton(int labelRes, Runnable action) {
+        TextView button = new TextView(this);
+        button.setText(labelRes);
+        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        button.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        button.setTextColor(colorOf(R.color.title_text));
+        button.setGravity(Gravity.CENTER);
+        button.setPadding(dp(18), dp(14), dp(18), dp(14));
+        GradientDrawable shape = new GradientDrawable();
+        shape.setColor(colorOf(R.color.chip_bg));
+        shape.setCornerRadius(dp(14));
+        shape.setStroke(1, colorOf(R.color.chip_stroke));
+        button.setBackground(shape);
+        button.setClickable(true);
+        button.setOnClickListener(v -> action.run());
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.topMargin = dp(10);
+        button.setLayoutParams(params);
+        return button;
+    }
+
     private void openWebViewUpdatePage() {
-        String pkg = "com.google.android.webview";
+        String provider = DeviceCompat.webViewProvider(this)[0];
+
+        // 1. A store listing that can actually be acted on. Google's WebView and
+        //    Chrome come from the Play Store; Mulch and Bromite come from F-Droid.
+        if (provider != null && isPlayStoreWebView(provider)
+                && DeviceCompat.hasPlayStore(this) && openPlayListing(provider)) {
+            return;
+        }
+        if (provider != null && isFDroidWebView(provider) && DeviceCompat.hasFDroid(this)) {
+            openExternalUrl(RomSupport.fDroidWebViewUrl());
+            return;
+        }
+
+        // 2. Vanadium, LineageOS WebView, CalyxOS Chromium and friends are *parts of
+        //    the ROM*: no store ships them, and updating the system is what updates
+        //    them. Saying so is right; sending the user to a listing they cannot
+        //    install from is not.
+        if (provider != null && isRomBundledWebView(provider)) {
+            toast(getString(R.string.webview_updated_by_rom, provider));
+            return;
+        }
+
+        // 3. No usable provider at all: point at somewhere a WebView really exists.
+        if (openPlayListing("com.google.android.webview")) return;
+        openExternalUrl(RomSupport.fDroidWebViewUrl());
+    }
+
+    private static boolean isPlayStoreWebView(String pkg) {
+        return pkg.equals("com.google.android.webview")
+                || pkg.equals("com.android.webview")
+                || pkg.equals("com.android.chrome");
+    }
+
+    private static boolean isFDroidWebView(String pkg) {
+        return pkg.equals("us.spotco.mulch_wv") || pkg.equals("com.bromite.webview")
+                || pkg.equals("org.bromite.webview");
+    }
+
+    private static boolean isRomBundledWebView(String pkg) {
+        return pkg.equals("app.vanadium.webview") || pkg.equals("org.lineageos.webview")
+                || pkg.equals("org.chromium.chrome") || pkg.equals("com.system.webview");
+    }
+
+    /** Opens a Play Store listing. @return true when a store handled the intent */
+    private boolean openPlayListing(String pkg) {
         try {
-            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + pkg)));
-        } catch (Exception e) {
-            try {
-                startActivity(new Intent(Intent.ACTION_VIEW,
-                        Uri.parse("https://play.google.com/store/apps/details?id=" + pkg)));
-            } catch (Exception ignored) {
-                toast(getString(R.string.no_app_to_handle));
-            }
+            Intent intent = new Intent(Intent.ACTION_VIEW,
+                    Uri.parse("market://details?id=" + pkg));
+            intent.addCategory(Intent.CATEGORY_BROWSABLE);
+            // resolveActivity needs <queries> on Android 11+; no match means no Play
+            // Store client, which is the normal state of a GMS-free ROM.
+            if (intent.resolveActivity(getPackageManager()) == null) return false;
+            startActivity(intent);
+            return true;
+        } catch (Exception noStore) {
+            return false;
+        }
+    }
+
+    /** Opens any https URL in whatever app can take it. */
+    private void openExternalUrl(String url) {
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            intent.addCategory(Intent.CATEGORY_BROWSABLE);
+            startActivity(intent);
+        } catch (Exception noHandler) {
+            toast(getString(R.string.no_app_to_handle));
         }
     }
 
@@ -1306,6 +1540,259 @@ public class MainActivity extends ComponentActivity {
             return true;
         }
         return false;
+    }
+
+    /**
+     * Native bridge for the bundled React app ({@code window.VictusNative}).
+     *
+     * <p>Two capabilities, both filtered. {@code addJavascriptInterface} is
+     * per-WebView rather than per-origin, so any page this shell loads can reach
+     * the bridge, which is why nothing here trusts its caller:</p>
+     *
+     * <ul>
+     *   <li><b>Navigation</b> — {@link #openWebView} / {@link #openBrowser} accept
+     *       only what {@link InAppLinks} allows (https, Victus hosts, no embedded
+     *       credentials), and they return no data.</li>
+     *   <li><b>Authentication</b> — the {@code auth*} methods are refused unless the
+     *       bundled app is the page in the shell
+     *       ({@link MainActivity#bundledAppForeground}), because the dock can point
+     *       this same WebView at {@code victuscloud.com} and a page on that origin
+     *       must not inherit the user's panel session.</li>
+     * </ul>
+     *
+     * <p>The session's secret never crosses the bridge: an API key is attached to
+     * panel requests natively by {@link VictusAuth}, and the replies JavaScript
+     * sees carry the account (name, email, admin flag), not the credential.</p>
+     */
+    private static final class WebAppBridge {
+        private final MainActivity activity;
+
+        WebAppBridge(MainActivity activity) {
+            this.activity = activity;
+        }
+
+        @JavascriptInterface
+        public void openWebView(String url, String title) {
+            final String target = InAppLinks.toInAppHttpsUrl(url);
+            if (target == null) return; // foreign or unsafe URL: ignore it
+            final String label = InAppLinks.sanitizeTitle(title,
+                    activity.getString(R.string.browser_title));
+            // Bridge calls arrive on a WebView thread, never the UI thread.
+            activity.runOnUiThread(() -> {
+                if (activity.isFinishing() || activity.isDestroyed()) return;
+                activity.showInAppBrowser(target, label);
+            });
+        }
+
+        /** "Open in browser": hands an https page to the device browser. */
+        @JavascriptInterface
+        public void openBrowser(String url) {
+            final String target = InAppLinks.toExternalHttpsUrl(url);
+            if (target == null) return;
+            activity.runOnUiThread(() -> {
+                if (activity.isFinishing() || activity.isDestroyed()) return;
+                try {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(target));
+                    intent.addCategory(Intent.CATEGORY_BROWSABLE);
+                    activity.startActivity(intent);
+                } catch (Exception e) {
+                    Toast.makeText(activity, R.string.no_app_to_handle, Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+
+        // ---------------------------------------------------------- sign-in
+
+        /**
+         * Email (or username) plus password against
+         * {@code control.victuscloud.com}. Resolves with
+         * {@code state:"signed_in"}, {@code state:"two_factor_required"} (then call
+         * {@link #authSubmitTwoFactor}) or {@code state:"error"} carrying the
+         * panel's own message.
+         */
+        @JavascriptInterface
+        public void authSignIn(String user, String password, String callbackId) {
+            final long id = parseCallbackId(callbackId);
+            if (id < 0) return;
+            if (!activity.allowAuthCall(id)) return;
+            activity.runAuthTask(id, () -> activity.victusAuth.signIn(user, password).toJson());
+        }
+
+        /** The second factor: a 6-digit authenticator code, or a recovery code. */
+        @JavascriptInterface
+        public void authSubmitTwoFactor(String confirmationToken, String code, String callbackId) {
+            final long id = parseCallbackId(callbackId);
+            if (id < 0) return;
+            if (!activity.allowAuthCall(id)) return;
+            activity.runAuthTask(id, () ->
+                    activity.victusAuth.submitTwoFactor(confirmationToken, code).toJson());
+        }
+
+        /** Sign in with a key from the panel's Account → API Credentials screen. */
+        @JavascriptInterface
+        public void authSignInWithApiKey(String apiKey, String callbackId) {
+            final long id = parseCallbackId(callbackId);
+            if (id < 0) return;
+            if (!activity.allowAuthCall(id)) return;
+            activity.runAuthTask(id, () -> activity.victusAuth.signInWithApiKey(apiKey).toJson());
+        }
+
+        /** Restores and re-validates the stored session (called once on app start). */
+        @JavascriptInterface
+        public void authRestore(String callbackId) {
+            final long id = parseCallbackId(callbackId);
+            if (id < 0) return;
+            if (!activity.allowAuthCall(id)) return;
+            activity.runAuthTask(id, () -> activity.victusAuth.restore().toJson());
+        }
+
+        /**
+         * Asks the panel to email a password-reset link. Resolves with the panel's
+         * own confirmation text ({@code state:"info"}) or its error message.
+         */
+        @JavascriptInterface
+        public void authPasswordReset(String email, String callbackId) {
+            final long id = parseCallbackId(callbackId);
+            if (id < 0) return;
+            if (!activity.allowAuthCall(id)) return;
+            activity.runAuthTask(id, () -> activity.victusAuth.requestPasswordReset(email).toJson());
+        }
+
+        /**
+         * An authenticated {@code GET /api/client…} through the stored session.
+         * The page never sees the credential; it only sees the panel's response,
+         * and only for a path inside the client API.
+         */
+        @JavascriptInterface
+        public void apiGet(String path, String callbackId) {
+            final long id = parseCallbackId(callbackId);
+            if (id < 0) return;
+            if (!activity.allowAuthCall(id)) return;
+            activity.runAuthTask(id, () -> {
+                if (!VictusApi.isAcceptableApiPath(path)) {
+                    return bridgeError("The app only reads " + VictusApi.API_PATH_PREFIX + "…");
+                }
+                return apiPayload(activity.victusAuth.apiGet(path));
+            });
+        }
+
+        /**
+         * An authenticated {@code POST /api/client…}: power actions and console
+         * commands. Same allowlist as {@link #apiGet}, and the credential is still
+         * attached natively.
+         */
+        @JavascriptInterface
+        public void apiPost(String path, String body, String callbackId) {
+            final long id = parseCallbackId(callbackId);
+            if (id < 0) return;
+            if (!activity.allowAuthCall(id)) return;
+            activity.runAuthTask(id, () -> {
+                if (!VictusApi.isAcceptableApiPath(path)) {
+                    return bridgeError("The app only calls " + VictusApi.API_PATH_PREFIX + "…");
+                }
+                return apiPayload(activity.victusAuth.apiPost(path, body));
+            });
+        }
+
+        /** The shared shape every panel response is handed to the page in. */
+        private static String apiPayload(VictusHttp.Response response) {
+            JSONObject json = new JSONObject();
+            try {
+                json.put("ok", response.isSuccess());
+                json.put("state", response.isSuccess() ? "ok" : "error");
+                json.put("status", response.status);
+                json.put("body", response.body);
+                if (response.failure != null) json.put("message", response.failure);
+            } catch (Exception impossible) {
+                // JSONObject.put only rejects null keys.
+            }
+            return json.toString();
+        }
+
+        /**
+         * Signs out. {@code revokeKey} also deletes the API key this app created,
+         * so pressing "Sign out" does not leave a live credential on the panel.
+         */
+        @JavascriptInterface
+        public void authSignOut(boolean revokeKey, String callbackId) {
+            final long id = parseCallbackId(callbackId);
+            if (id < 0) return;
+            if (!activity.allowAuthCall(id)) return;
+            activity.runAuthTask(id, () -> activity.victusAuth.signOut(revokeKey).toJson());
+        }
+
+        private static long parseCallbackId(String raw) {
+            if (raw == null) return -1;
+            try {
+                long id = Long.parseLong(raw.trim());
+                return id >= 0 ? id : -1;
+            } catch (NumberFormatException notANumber) {
+                return -1;
+            }
+        }
+    }
+
+    /**
+     * Gate for the auth half of the bridge. Answers the caller either way, so a
+     * refusal surfaces as an error in the UI instead of a promise that never
+     * settles.
+     */
+    private boolean allowAuthCall(long callbackId) {
+        if (victusAuth == null) {
+            deliverAuthResult(callbackId, bridgeError("The app is still starting up. Try again."));
+            return false;
+        }
+        if (!bundledAppForeground) {
+            deliverAuthResult(callbackId, bridgeError(
+                    "Sign-in is only available in the Victus Cloud app."));
+            return false;
+        }
+        return true;
+    }
+
+    /** Runs an auth call on the serial auth thread and resolves the JS callback. */
+    private void runAuthTask(long callbackId, AuthTask task) {
+        authIo.execute(() -> {
+            String payload;
+            try {
+                payload = task.run();
+            } catch (Exception failure) {
+                payload = bridgeError("Couldn't complete that: " + failure.getClass().getSimpleName());
+            }
+            deliverAuthResult(callbackId, payload);
+        });
+    }
+
+    /** A blocking auth call returning the JSON payload for the page. */
+    private interface AuthTask {
+        String run();
+    }
+
+    /** Resolves the page's pending promise: {@code __victusBridge.resolve(id, json)}. */
+    private void deliverAuthResult(long callbackId, String payload) {
+        runOnUiThread(() -> {
+            if (webView == null || isFinishing() || isDestroyed()) return;
+            String script = "(window.__victusBridge && window.__victusBridge.resolve("
+                    + callbackId + "," + JSONObject.quote(payload) + "))";
+            try {
+                webView.evaluateJavascript(script, null);
+            } catch (Exception torn_down) {
+                // Nothing to deliver to any more; not worth crashing over.
+            }
+        });
+    }
+
+    /** The bridge's error payload shape, shared by every refusal path. */
+    static String bridgeError(String message) {
+        JSONObject json = new JSONObject();
+        try {
+            json.put("ok", false);
+            json.put("state", "error");
+            json.put("message", message);
+        } catch (Exception impossible) {
+            // JSONObject.put only rejects null keys, which cannot happen here.
+        }
+        return json.toString();
     }
 
     private int colorOf(int resId) {

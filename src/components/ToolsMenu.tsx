@@ -117,7 +117,7 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
               {/* Dashboard (Active State matching reference) */}
               <button
                 onClick={() => {
-                  onNavigate('http://control.victuscloud.com/', 'Control Panel', 'control');
+                  onNavigate('https://control.victuscloud.com/', 'Control Panel', 'control');
                   onClose();
                 }}
                 className={`w-full min-h-[40px] px-3 rounded-xl flex items-center gap-3 transition-colors cursor-pointer text-left ${
@@ -133,7 +133,7 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
               {/* My Servers */}
               <button
                 onClick={() => {
-                  onNavigate('http://control.victuscloud.com/', 'My Servers', 'control');
+                  onNavigate('https://control.victuscloud.com/', 'My Servers', 'control');
                   onClose();
                 }}
                 className="w-full min-h-[40px] px-3 rounded-xl flex items-center gap-3 text-slate-300 hover:text-white hover:bg-white/[0.04] transition-colors cursor-pointer text-left"
@@ -166,7 +166,7 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
               {/* Domains */}
               <button
                 onClick={() => {
-                  onNavigate('http://billing.victuscloud.com', 'Domains', 'billing');
+                  onNavigate('https://billing.victuscloud.com', 'Domains', 'billing');
                   onClose();
                 }}
                 className="w-full min-h-[40px] px-3 rounded-xl flex items-center gap-3 text-slate-300 hover:text-white hover:bg-white/[0.04] transition-colors cursor-pointer text-left"
@@ -178,7 +178,7 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
               {/* VPS */}
               <button
                 onClick={() => {
-                  onNavigate('http://control.victuscloud.com/', 'VPS Instances', 'control');
+                  onNavigate('https://control.victuscloud.com/', 'VPS Instances', 'control');
                   onClose();
                 }}
                 className="w-full min-h-[40px] px-3 rounded-xl flex items-center gap-3 text-slate-300 hover:text-white hover:bg-white/[0.04] transition-colors cursor-pointer text-left"
@@ -222,7 +222,7 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
               {/* Order Servers (Card Button highlighted matching screenshot) */}
               <button
                 onClick={() => {
-                  onNavigate('http://billing.victuscloud.com', 'Order Servers', 'billing');
+                  onNavigate('https://billing.victuscloud.com', 'Order Servers', 'billing');
                   onClose();
                 }}
                 className="w-full min-h-[42px] px-3.5 rounded-xl flex items-center gap-3 bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] text-white font-medium transition-colors cursor-pointer text-left"
@@ -353,7 +353,7 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
 
           {/* Admin Area */}
           <button
-            onClick={() => handleLink('http://control.victuscloud.com/admin', 'Admin Area', 'control')}
+            onClick={() => handleLink('https://control.victuscloud.com/admin', 'Admin Area', 'control')}
             className="w-full min-h-[38px] px-3 rounded-lg flex items-center gap-3 hover:bg-white/[0.04] text-slate-300 hover:text-white transition-colors cursor-pointer text-left"
           >
             <div className="w-5 h-5 rounded-lg bg-violet-600/20 border border-violet-500/30 text-violet-300 flex items-center justify-center flex-shrink-0">
