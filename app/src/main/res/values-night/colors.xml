@@ -20,4 +20,10 @@
     <color name="sheet_stroke">#26C084FC</color>
     <color name="sheet_handle">#4DE7D9FB</color>
     <color name="swatch_stroke">#40FFFFFF</color>
+
+    <!-- Tools overflow menu (dark glass in both modes). -->
+    <color name="menu_bg">#F20C0C14</color>
+    <color name="menu_stroke">#14FFFFFF</color>
+    <color name="menu_icon">#A8B0C0</color>
+    <color name="danger">#F87171</color>
 </resources>

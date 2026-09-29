@@ -42,6 +42,24 @@ const initialConfig: ThemeConfig = {
 
 const ThemeContext = createContext<ThemeContextType | null>(null);
 
+/**
+ * Live bridge from the Android shell: MainActivity evaluates the same config
+ * object whenever the native Appearance sheet changes something, so both
+ * surfaces stay in lockstep while the app runs. Keys mirror ThemeConfig.
+ */
+interface NativeThemeEvent extends CustomEvent {
+  detail: {
+    preset?: ThemePreset;
+    customA?: string;
+    customB?: string;
+    isCustomSolid?: boolean;
+    reduceMotion?: boolean;
+    colorMode?: ColorMode;
+    background?: BackgroundStyle;
+    isDark?: boolean;
+  };
+}
+
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [config, setConfig] = useState<ThemeConfig>(() => {
     try {
@@ -119,6 +137,29 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       root.style.setProperty(CSS_VAR_NAMES[key], tokens[key]);
     });
   }, [config, gradientColors, isDark]);
+
+  // Native-shell bridge: mirror config changes coming from the Android
+  // Appearance sheet (Tools → Settings) into web state. Skipped when the
+  // message didn't originate from the shell.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handler = (event: Event) => {
+      const detail = (event as NativeThemeEvent).detail || {};
+      setConfig((prev) => {
+        let next = prev;
+        if (detail.preset && detail.preset !== prev.preset) next = { ...next, preset: detail.preset };
+        if (detail.customA) next = { ...next, customA: detail.customA };
+        if (detail.customB) next = { ...next, customB: detail.customB };
+        if (typeof detail.isCustomSolid === 'boolean') next = { ...next, isCustomSolid: detail.isCustomSolid };
+        if (typeof detail.reduceMotion === 'boolean') next = { ...next, reduceMotion: detail.reduceMotion };
+        if (detail.colorMode) next = { ...next, colorMode: detail.colorMode };
+        if (detail.background) next = { ...next, background: detail.background };
+        return next;
+      });
+    };
+    window.addEventListener('victus:theme', handler);
+    return () => window.removeEventListener('victus:theme', handler);
+  }, []);
 
   const setPreset = useCallback((preset: ThemePreset) => {
     setConfig((prev) => ({ ...prev, preset }));

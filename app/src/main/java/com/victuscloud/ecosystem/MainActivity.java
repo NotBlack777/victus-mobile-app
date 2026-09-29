@@ -15,6 +15,7 @@ import android.os.Bundle;
 import android.util.TypedValue;
 import android.view.Display;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
@@ -44,6 +45,7 @@ import androidx.core.graphics.Insets;
 import androidx.core.splashscreen.SplashScreen;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 import androidx.webkit.WebSettingsCompat;
 import androidx.webkit.WebViewAssetLoader;
 import androidx.webkit.WebViewFeature;
@@ -107,6 +109,7 @@ public class MainActivity extends ComponentActivity {
     /** Set when a launcher shortcut asked for the updater directly. */
     private boolean pendingUpdateSheet;
     private ProgressBar pageProgress;
+    private SwipeRefreshLayout pullRefresh;
     private WebView webView;
     private HorizontalScrollView dockScroller;
     private LinearLayout dockRow;
@@ -139,6 +142,30 @@ public class MainActivity extends ComponentActivity {
             new ActivityResultContracts.RequestPermission(), this::onStoragePermissionResult);
 
     // ============================================================== lifecycle
+
+    /**
+     * Display-mode forcing without AppCompat: the saved colorMode (Dark / Light
+     * / System from the Appearance sheet) is folded into the activity's base
+     * configuration, so the values-night resource overrides — and EdgeToEdge's
+     * system-bar icon contrast — re-resolve to match what the user picked,
+     * even when it differs from the OS setting. "System" leaves the context
+     * untouched. {@link #recreateForColorMode()} re-runs this after a change,
+     * with WebView state restored across it by the framework.
+     */
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        String mode = ThemeManager.getColorMode(base);
+        if (!ThemeManager.COLOR_SYSTEM.equals(mode)) {
+            android.content.res.Configuration config =
+                    new android.content.res.Configuration(base.getResources().getConfiguration());
+            int night = ThemeManager.COLOR_DARK.equals(mode)
+                    ? android.content.res.Configuration.UI_MODE_NIGHT_YES
+                    : android.content.res.Configuration.UI_MODE_NIGHT_NO;
+            config.uiMode = (config.uiMode & ~android.content.res.Configuration.UI_MODE_NIGHT_MASK) | night;
+            base = base.createConfigurationContext(config);
+        }
+        super.attachBaseContext(base);
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -345,7 +372,22 @@ public class MainActivity extends ComponentActivity {
         webView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
         LinearLayout.LayoutParams webParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
-        content.addView(webView, webParams);
+
+        // Pull-to-refresh on the whole content column; disabled while the page
+        // loads so a refresh can't stack on itself. Only our bundled home screen
+        // and Victus Cloud pages are refreshable (external sites keep their own
+        // gesture space and never silently re-POST anything).
+        pullRefresh = new SwipeRefreshLayout(this);
+        pullRefresh.addView(webView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        pullRefresh.setColorSchemeColors(ThemeManager.solid(this));
+        pullRefresh.setProgressBackgroundColorSchemeColor(colorOf(R.color.chip_bg));
+        pullRefresh.setOnRefreshListener(() -> {
+            hideErrorOverlay();
+            webView.reload();
+        });
+        pullRefresh.setEnabled(false);
+        content.addView(pullRefresh, webParams);
 
         buildDock(content);
 
@@ -483,7 +525,20 @@ public class MainActivity extends ComponentActivity {
         chip.setMinHeight(dp(48));               // ≥48dp touch target at every density
         chip.setPadding(dp(18), 0, dp(18), 0);
         chip.setForeground(ContextCompat.getDrawable(this, resolveAttr(android.R.attr.selectableItemBackground)));
-        chip.setOnClickListener(v -> loadTab(index));
+        chip.setOnClickListener(v -> {
+            // Light tick on tab switches — same feedback family as the menu.
+            try {
+                if (Build.VERSION.SDK_INT >= 27) {
+                    chip.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP,
+                            HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
+                } else {
+                    chip.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+                }
+            } catch (Exception ignored) {
+                // Haptics are a nicety — never a crash.
+            }
+            loadTab(index);
+        });
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         if (index < DOCK_URLS.length - 1) params.setMarginEnd(dp(8));
@@ -668,12 +723,15 @@ public class MainActivity extends ComponentActivity {
         pageProgress.setAlpha(1f);
         pageProgress.setVisibility(View.VISIBLE);
         pageProgress.setProgress(0);
+        pullRefresh.setRefreshing(false); // a finished load also ends any refresh gesture
+        pullRefresh.setEnabled(isRefreshableUrl(url));
         selectDock(indexForUrl(url), false);
     }
 
     void onPageLoadFinished(String url) {
         pageProgress.animate().alpha(0f).setDuration(220)
                 .withEndAction(() -> pageProgress.setVisibility(View.GONE)).start();
+        pullRefresh.setRefreshing(false); // both load-finished and refresh-finished
         backButton.setEnabled(webView != null && webView.canGoBack());
         backButton.setAlpha(backButton.isEnabled() ? 1f : 0.38f);
         selectDock(indexForUrl(url), false);
@@ -723,36 +781,19 @@ public class MainActivity extends ComponentActivity {
         }
     }
 
-    /** The "Tools" overflow menu — theme-aware dialog, no custom pixel math. */
+    /** The "Tools" overflow menu — dark glass card anchored to the ⋮ button. */
     void showToolsMenu() {
-        String available = UpdateChecker.availableVersionName(this);
-        final String[] items = {
-                getString(R.string.tools_settings),
-                getString(R.string.tools_open_browser),
-                getString(R.string.tools_copy_link),
-                getString(R.string.tools_share_link),
-                getString(R.string.tools_test_panel),
-                getString(R.string.tools_support),
-                getString(R.string.tools_status),
-                getString(R.string.tools_marketplace),
-                available == null
-                        ? getString(R.string.tools_check_updates)
-                        : getString(R.string.tools_check_updates_available, available),
-                getString(R.string.tools_clear_session),
-        };
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.action_tools)
-                .setItems(items, (dialog, which) -> onToolSelected(which))
-                .show();
+        if (toolsButton == null) return;
+        ToolsMenu.show(this, toolsButton);
     }
 
-    private void onToolSelected(int which) {
+    void onToolSelected(int which) {
         String current = webView.getUrl() == null ? HOME_URL : webView.getUrl();
         switch (which) {
-            case 0: // settings / appearance
+            case ToolsMenu.TOOL_SETTINGS: // settings / appearance
                 SettingsSheet.show(this);
                 break;
-            case 1: { // open in browser
+            case ToolsMenu.TOOL_OPEN_BROWSER: { // open in browser
                 Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(current));
                 intent.addCategory(Intent.CATEGORY_BROWSABLE);
                 try {
@@ -762,43 +803,52 @@ public class MainActivity extends ComponentActivity {
                 }
                 break;
             }
-            case 2: { // copy link
+            case ToolsMenu.TOOL_COPY_LINK: { // copy link
                 ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-                cm.setPrimaryClip(ClipData.newPlainText("Victus Cloud", current));
-                toast(getString(R.string.link_copied));
+                if (cm != null) {
+                    cm.setPrimaryClip(ClipData.newPlainText("Victus Cloud", current));
+                    toast(getString(R.string.link_copied));
+                }
                 break;
             }
-            case 3: { // share link
-                Intent send = new Intent(Intent.ACTION_SEND)
-                        .setType("text/plain")
-                        .putExtra(Intent.EXTRA_TEXT, current);
-                startActivity(Intent.createChooser(send, null));
+            case ToolsMenu.TOOL_SHARE_LINK: { // share link
+                try {
+                    Intent send = new Intent(Intent.ACTION_SEND)
+                            .setType("text/plain")
+                            .putExtra(Intent.EXTRA_TEXT, current);
+                    startActivity(Intent.createChooser(send, null));
+                } catch (Exception e) {
+                    toast(getString(R.string.no_app_to_handle));
+                }
                 break;
             }
-            case 4: // test (beta) panel
+            case ToolsMenu.TOOL_TEST_PANEL: // test (beta) panel
                 loadUrlInternal("https://testpanel.victuscloud.com");
                 break;
-            case 5:
+            case ToolsMenu.TOOL_SUPPORT:
                 loadTab(5); // Support
                 break;
-            case 6:
+            case ToolsMenu.TOOL_STATUS:
                 loadTab(6); // Status
                 break;
-            case 7:
+            case ToolsMenu.TOOL_MARKETPLACE:
                 loadUrlInternal("https://victuscloud.com/marketplace");
                 break;
-            case 8:
+            case ToolsMenu.TOOL_UPDATES:
                 UpdateSheet.show(this);
                 break;
-            case 9:
+            case ToolsMenu.TOOL_CLEAR_SESSION:
                 confirmClearSession();
+                break;
+            default:
                 break;
         }
     }
 
     /**
      * Clears WebView cookies, storage, cache and panel sessions, after a
-     * confirmation. The work itself is small/fast; nothing touches the network.
+     * confirmation. The work itself is small/fast; nothing touches the network
+     * and nothing ever reaches a server — this is purely client-side state.
      */
     void confirmClearSession() {
         new AlertDialog.Builder(this)
@@ -806,14 +856,22 @@ public class MainActivity extends ComponentActivity {
                 .setMessage(R.string.clear_session_message)
                 .setNegativeButton(R.string.cancel, null)
                 .setPositiveButton(R.string.clear_session_confirm, (dialog, which) -> {
+                    // Wipe every piece of local browser state we can reach.
                     CookieManager cookies = CookieManager.getInstance();
                     cookies.removeAllCookies(null);
+                    cookies.removeSessionCookies(null);
                     cookies.flush();
                     WebStorage.getInstance().deleteAllData();
                     webView.clearCache(true);
                     webView.clearFormData();
+                    webView.clearSslPreferences();
+                    webView.clearHistory();
+                    webView.clearMatches();
+                    // Drop the back/forward list too: clearing the session means
+                    // "fresh start", not "reload the old page from memory".
+                    selectDock(TAB_HOME, false);
+                    webView.loadUrl(HOME_URL);
                     toast(getString(R.string.clear_session_done));
-                    webView.reload();
                 })
                 .show();
     }
@@ -988,6 +1046,9 @@ public class MainActivity extends ComponentActivity {
         if (pageProgress != null) {
             pageProgress.setProgressTintList(ColorStateList.valueOf(ThemeManager.solid(this)));
         }
+        if (pullRefresh != null) {
+            pullRefresh.setColorSchemeColors(ThemeManager.solid(this));
+        }
         if (errorGlyph != null) {
             errorGlyph.setBackground(buildAccentDrawable(dp(32)));
         }
@@ -1000,10 +1061,34 @@ public class MainActivity extends ComponentActivity {
         injectThemeIntoWebView();
     }
 
-    /** Pushes the live accent gradient + reduce-motion flag into the bundled React
-     *  app as CSS custom properties. Only runs against our own bundled asset origin —
-     *  a no-op (and harmless either way) on every other site in the WebView. The app
-     *  re-applies its own saved theme on mount, so this only sets the initial value. */
+    /**
+     * Display mode changed and the native chrome's dark/light resource sets
+     * need re-resolution. The framework runs {@link #onSaveInstanceState()}
+     * (WebView history + selected dock) across {@link Activity#recreate()}, so
+     * this reads as an instant theme flip rather than a restart.
+     */
+    void recreateForColorMode() {
+        recreate();
+    }
+
+    /** Whether a pull-to-refresh makes sense for what's currently loaded. */
+    private boolean isRefreshableUrl(String url) {
+        if (url == null) return false;
+        Uri uri = Uri.parse(url);
+        String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(java.util.Locale.US);
+        return ASSETS_HOST.equals(host)
+                || "victuscloud.com".equals(host)
+                || host.endsWith(".victuscloud.com");
+    }    /**
+     * Pushes the native appearance config into the bundled React app: the live
+     * accent gradient + reduce-motion flag as CSS custom properties, plus the
+     * full native config object the web ThemeContext now listens for
+     * (window.dispatchEvent(new CustomEvent('victus:theme', {detail}))). Only
+     * runs against our own bundled asset origin — a no-op on every other site
+     * in the WebView. The app still re-applies its own saved theme on mount;
+     * this event mirrors native changes live, so the native sheet is the
+     * single source of truth while the shell is running.
+     */
     private void injectThemeIntoWebView() {
         if (webView == null) return;
         String url = webView.getUrl();
@@ -1024,6 +1109,16 @@ public class MainActivity extends ComponentActivity {
                 + "s.setProperty('--accent-2-rgb','" + ThemeManager.rgb(b) + "');"
                 + "s.setProperty('--accent-3-rgb','" + ThemeManager.rgb(c) + "');"
                 + "document.documentElement.classList.toggle('reduce-motion'," + reduceMotion + ");"
+                + "window.dispatchEvent(new CustomEvent('victus:theme',{detail:{"
+                + "preset:'" + ThemeManager.getPreset(this) + "',"
+                + "customA:'" + ThemeManager.hex(ThemeManager.getCustomA(this)) + "',"
+                + "customB:'" + ThemeManager.hex(ThemeManager.getCustomB(this)) + "',"
+                + "isCustomSolid:" + ThemeManager.isCustomSolid(this) + ","
+                + "reduceMotion:" + reduceMotion + ","
+                + "colorMode:'" + ThemeManager.getColorMode(this) + "',"
+                + "background:'" + ThemeManager.getBackground(this) + "',"
+                + "isDark:" + ThemeManager.isDark(this)
+                + "}}));"
                 + "})();";
         webView.evaluateJavascript(script, null);
     }

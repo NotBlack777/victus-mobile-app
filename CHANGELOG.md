@@ -1,3 +1,153 @@
+# Changelog — Victus Cloud 2.2.1 (reference UX port + full audit + polish)
+
+The reference web app's **Tools menu** and **Appearance (Settings)** experience,
+ported 1:1 to native Android with zero new heavy dependencies, plus a full
+bug/perf/polish sweep. Nothing removed; everything still compiles to the same
+`com.victuscloud.ecosystem` package with the purple/black glass brand.
+
+## Ported from the reference app (Task 1)
+
+- **Glass Tools overflow menu** (new `ToolsMenu.java`): the flat grey
+  `AlertDialog` is gone. The ⋮ button now opens a dark glass card (translucent
+  `menu_bg` surface, hairline stroke, 22dp corners, 18dp elevation) anchored
+  below the button, with a springy scale/fade entrance from the button's corner,
+  ripple on every row, per-row vector icons, a light haptic on tap and a short
+  fade-out on selection. All ten entries match the reference ordering —
+  Settings, Open in browser, Copy link, Share link, Open test panel (Beta),
+  Support, System status, Marketplace, Check for updates (dynamic
+  "Update available · vX" label + accent dot when a newer build exists), and
+  Clear app session in the danger color. A small brand header ("Victus Cloud ·
+  vX · victuscloud.com") echoes the reference drawer's wordmark. BACK closes
+  the menu first; taps outside dismiss; the card scrolls (capped at 72% of
+  screen height) so all ten rows stay reachable on small phones.
+- **Appearance settings rebuilt** (`SettingsSheet.java`):
+  - **Live preview banner** that repaints on every change, as before.
+  - **Five presets + Custom** — Purple → Black (brand default), Blue → Teal,
+    and the reference app's v2.2.0 additions: Emerald → Night, Ember → Night,
+    Slate → Night (swatches painted from the same accent triples as
+    `src/theme/palettes.ts`). The user's brief listed only two presets; the
+    reference repo wins per its own rule, so all five ship.
+  - **Custom gradient builder** — start color, end color, solid toggle
+    (hides the end row), 16-color palette identical to the reference sheet and
+    `#RRGGBB` entry with real-time validation and live swatch preview.
+  - **Background** — Aurora / Mesh / Starfield / Off, the reference app's
+    backdrop options, bridged live into the bundled web app (see below).
+  - **Motion & Performance** — Reduce animations switch, which now also honors
+    the system "remove animations" accessibility setting.
+  - **Ecosystem — Open links externally** — the reference app's toggle:
+    when on, Victus Cloud links tapped inside a loaded page open in the device
+    browser; the bundled home screen and the dock always stay in-app.
+  - **Display mode** — Dark / Light / Follow System selector.
+  - **Security** — the Android-specific "Trust Victus Cloud certificates"
+    switch is kept (it has no web equivalent and fixes real device-root issues).
+  - Reset / Done footer as in the reference sheet.
+- **Persistence & instant application**: everything is stored in
+  SharedPreferences (`victus_theme_prefs`) via the extended `ThemeManager`
+  and applied with no restart — presets, custom colors, solid toggle,
+  background and reduce-motion repaint the native chrome and the loaded web app
+  immediately. Only **display mode** needs one seamless Activity recreate
+  (the native light/dark resource sets resolve at attach time); WebView history
+  and the current page are restored across it by the framework.
+- **Native → web theme bridge**: `injectThemeIntoWebView()` now dispatches the
+  full native config (`preset`, `customA/B`, `isCustomSolid`, `reduceMotion`,
+  `colorMode`, `background`) as a `victus:theme` DOM event; the web
+  `ThemeContext` listens for it, so the native Appearance sheet is the single
+  source of truth while the shell is running.
+
+## Bugs fixed (Task 2)
+
+- **SSL error handling tightened** (`VictusWebViewClient.onReceivedSslError`):
+  - Embedded **third-party resources** (CDNs, fonts, analytics) whose host has a
+    bad certificate are now refused silently — previously any SSL failure on any
+    host, including an embedded resource, escalated to the full-screen
+    "Can't reach Victus Cloud" error screen and blocked the whole page.
+  - The **"Trust Victus Cloud certificates" setting is scoped to the two
+    device-side error codes** (`SSL_UNTRUSTED` error 3, `SSL_NOTYETVALID`) on
+    real *.victuscloud.com hosts. It previously auto-proceeded for *every*
+    SSL error code on trusted domains — including expired and
+    hostname-mismatched certificates, which are never safe to accept. Those are
+    now always blocked, trust setting or not.
+  - No blind `handler.proceed()` remains; the accurate error-3 message
+    (check date & time / update Android System WebView) and the "Update
+    WebView" shortcut are unchanged.
+- **Forced display mode now actually themes the native chrome.** Previously the
+  sheet had no display-mode control at all; the new implementation folds the
+  saved color mode into the activity's base configuration in
+  `attachBaseContext()`, so `values-night` resources and EdgeToEdge system-bar
+  icon contrast follow the user's Dark/Light choice even when it disagrees with
+  the OS. No flicker: the decision is made before any view inflates.
+- **Clear app session is now a complete wipe.** Added
+  `removeSessionCookies()`, `clearSslPreferences()`, `clearMatches()` and
+  `clearHistory()`, and the page reloads to a fresh bundled Home instead of
+  re-showing the pre-wipe page. Confirmation copy now states explicitly that
+  only local device data is cleared — **nothing server-side is touched**.
+- **MediaStore duplicate-name detection** (`DownloadTask`): the dedupe query
+  compared `RELATIVE_PATH` including its canonical trailing `/`, which some
+  OEM MediaStore implementations store without it — the query silently never
+  matched and duplicate suffixing was left to the platform. It now matches on
+  display name (same collection only holds our subdirectory), so
+  "file (1).ext" dedupe works on every OEM.
+- **Share-link crash guard**: `ACTION_SEND` chooser launches are now wrapped,
+  so a device with no share target shows a toast instead of an
+  `ActivityNotFoundException`. Copy-link guards against a null clipboard
+  service. Open-in-browser already had a guard and is unchanged.
+- **Pull-to-refresh cannot double-fire**: the gesture is disabled while a page
+  loads and re-enabled only for Victus Cloud / bundled pages
+  (`isRefreshableUrl`), so external sites keep their own gesture space and
+  nothing re-POSTs a form behind the user's back.
+- **Updater stays graceful**: background checks already swallow offline/rate-
+  limit errors and keep the last known state; the manual check surfaces errors
+  in the sheet. Verified unchanged and still passing all 16 unit tests.
+
+## Optimized / polish (Task 3)
+
+- **Pull-to-refresh** on the WebView column (new one-class dependency,
+  `androidx.swiperefreshlayout:1.1.0`, ~30KB) tinted with the live theme.
+- **Haptics** on dock-chip switches and menu rows (`HapticFeedbackConstants`,
+  guarded by API level and try/catch — feedback can never crash).
+- **Reduce-motion is now respected everywhere**: the in-app switch ORs with the
+  system `ANIMATOR_DURATION_SCALE=0` accessibility setting (mirroring the web
+  app's `prefers-reduced-motion` support), and the menu entrance, dock pulse,
+  error-overlay fades and sheet animations all collapse to zero-duration when
+  it is on.
+- **48dp touch targets** verified for every control, including the new display
+  mode selector (previously 44dp).
+- **Startup path untouched and lean**: the WebView is created and configured on
+  the main thread as before (that work is unavoidable there), the update check
+  still runs on a background executor after first frame, and no new work was
+  added to `onCreate` beyond one SharedPreferences read.
+- **Dead code / strings**: removed unused string resources added during
+  development; kept the resource set minimal (the release build already runs
+  `minifyEnabled` + `shrinkResources`).
+
+## Supabase-related, not touched
+
+There is **no Supabase code, configuration, URL, key or client left anywhere in
+this repository** (the web app's auth is a localStorage mock in
+`src/services/authService.ts`). Nothing Supabase-related existed to change, and
+nothing was changed: no URLs, keys, tables, schemas, RLS policies, auth flow,
+edge functions, storage buckets, realtime or API calls. "Clear app session"
+clears only the Android WebView's local cookies/storage/cache on the device.
+
+## Decisions made without asking (noted per instructions)
+
+- Ported all **five** presets and the **background options** from the current
+  reference repo, not just the two named in the brief ("repo wins").
+- The glass menu is built with `PopupWindow` + plain views (no blur API) —
+  true blur is a heavyweight per-frame effect on mobile GPUs; the translucent
+  surface over the dimmed window reads identically at a fraction of the cost.
+- Background animation itself (canvas aurora/starfield) lives in the bundled
+  web app as before; the native sheet's Background section drives it through
+  the bridge. Native chrome has no canvas backdrop, so the option only affects
+  the bundled UI — same as the reference app, where the backdrop is also a web
+  layer.
+- "Open links externally" applies to Victus Cloud pages loaded from a previous
+  in-app navigation, matching the reference app's semantics; the bundled home
+  screen and the top-bar dock always stay in-app so the shell can never
+  strand the user outside it.
+
+---
+
 # Changelog — Victus Cloud 2.1.1 (bug sweep + performance pass)
 
 A follow-up audit of the whole app: one real navigation-state bug, a

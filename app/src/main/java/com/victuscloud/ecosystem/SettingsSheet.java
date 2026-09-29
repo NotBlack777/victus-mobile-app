@@ -28,15 +28,34 @@ import android.widget.Toast;
 import androidx.core.content.ContextCompat;
 
 /**
- * Hand-rolled Settings / Appearance bottom sheet — plain Android views only,
- * no extra UI library. It is built when the user taps Tools → Settings and
- * discarded when it closes, so it costs nothing while the app is otherwise in
- * use (no background listeners, no persistent view tree).
+ * The reference app's Appearance settings, rebuilt natively — plain Android
+ * views only, no extra UI library. Built when the user taps Tools → Settings
+ * and discarded when it closes, so it costs nothing while the app is otherwise
+ * in use (no background listeners, no persistent view tree).
+ *
+ * <p>Sections mirror the reference sheet:</p>
+ * <ul>
+ *   <li>Live preview banner that repaints on every change,</li>
+ *   <li>Theme presets — Purple → Black (brand), Blue → Teal, Emerald → Night,
+ *       Ember → Night, Slate → Night (the reference app's v2.2.0 additions),
+ *       plus Custom,</li>
+ *   <li>Custom gradient builder — start color, end color, solid toggle, with a
+ *       16-color palette + #RRGGBB hex entry validated in real time,</li>
+ *   <li>Background — Aurora / Mesh / Starfield / Off (bridged into the bundled
+ *       web app; native chrome has no canvas backdrop),</li>
+ *   <li>Motion &amp; Performance — Reduce animations,</li>
+ *   <li>Ecosystem — Open links externally (reference app's toggle),</li>
+ *   <li>Security — Trust Victus Cloud certificates (Android-specific, kept),</li>
+ *   <li>Display mode — Dark / Light / Follow System,</li>
+ *   <li>Reset to default / Done.</li>
+ * </ul>
  *
  * <p>Every change is written straight to {@link ThemeManager} and applied live
- * (native chrome + the currently loaded WebView page, if it's the bundled home
- * screen) via {@link MainActivity#applyDynamicAccent()} — there is no separate
- * "Save" step and nothing ever needs to reload or recreate the Activity.</p>
+ * (native chrome + the currently loaded bundled home screen) via
+ * {@link MainActivity#applyDynamicAccent()} — there is no separate "Save" step.
+ * Only Display mode needs an activity recreate, because the native chrome's
+ * light/dark resource sets are resolved at attach time; MainActivity restores
+ * WebView state across it, so it still feels instant.</p>
  */
 final class SettingsSheet {
 
@@ -44,7 +63,7 @@ final class SettingsSheet {
         void onPicked(int color);
     }
 
-    /** Curated palette shown in the color picker, in addition to free hex entry. */
+    /** Curated palette shown in the color picker — same 16 as the reference app. */
     private static final int[] PALETTE = {
             0xFFC084FC, 0xFF7C3AED, 0xFF4F46E5, 0xFF2F81FF, 0xFF22D3EE, 0xFF13C8A6,
             0xFF22C55E, 0xFFA3E635, 0xFFFACC15, 0xFFFB923C, 0xFFEF4444, 0xFFEC4899,
@@ -56,15 +75,18 @@ final class SettingsSheet {
 
     private View previewBar;
     private TextView previewSubtitle;
-    private final View[] presetRings = new View[3];
-    private final View[] presetSwatches = new View[3];
+    private final View[] presetRings = new View[6];
+    private final View[] presetSwatches = new View[6];
     private LinearLayout customBlock;
     private View startSwatch;
     private View endSwatch;
     private LinearLayout endRow;
     private Switch solidSwitch;
     private Switch motionSwitch;
+    private Switch externalLinksSwitch;
     private Switch securitySwitch;
+    private final TextView[] displayModeButtons = new TextView[3];
+    private final View[] backgroundButtons = new View[4];
     /** Guards against the solid-switch listener re-firing during programmatic
      *  refreshes (e.g. tapping a different preset), which would otherwise
      *  silently force the preset back to Custom. */
@@ -172,15 +194,32 @@ final class SettingsSheet {
         customBlock.setVisibility(isCustom() ? View.VISIBLE : View.GONE);
         sheet.addView(customBlock, matchTop(dp(16)));
 
+        sheet.addView(sectionLabel(str(R.string.settings_background)), wrapTop(dp(24)));
+        TextView bgHint = text(str(R.string.settings_background_hint), 12, false, color(R.color.error_text));
+        LinearLayout.LayoutParams bgHintParams = wrapTop(dp(4));
+        bgHintParams.bottomMargin = dp(10);
+        sheet.addView(bgHint, bgHintParams);
+        sheet.addView(buildBackgroundGrid(), matchTop(0));
+
         sheet.addView(divider(), matchTop(dp(22), dp(1)));
         sheet.addView(buildMotionRow(), matchTop(dp(18)));
+
+        sheet.addView(divider(), matchTop(dp(22), dp(1)));
+        sheet.addView(buildExternalLinksRow(), matchTop(dp(18)));
+
         sheet.addView(divider(), matchTop(dp(22), dp(1)));
         sheet.addView(buildSecurityRow(), matchTop(dp(18)));
-        sheet.addView(buildButtonsRow(), matchTop(dp(22)));
+
+        sheet.addView(sectionLabel(str(R.string.settings_display_title)), wrapTop(dp(24)));
+        sheet.addView(buildDisplayModeRow(), matchTop(dp(10)));
+
+        sheet.addView(buildButtonsRow(), matchTop(dp(24)));
 
         refreshPresetSelection();
         refreshCustomSwatches();
         refreshPreview();
+        refreshBackgroundSelection();
+        refreshDisplayModeSelection();
 
         scroll.addView(sheet, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -259,21 +298,34 @@ final class SettingsSheet {
     // --------------------------------------------------------------- preset
 
     private LinearLayout buildPresetRow() {
-        LinearLayout row = new LinearLayout(activity);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setWeightSum(3f);
+        LinearLayout wrap = new LinearLayout(activity);
+        wrap.setOrientation(LinearLayout.VERTICAL);
 
-        String[] ids = {ThemeManager.PRESET_PURPLE_BLACK, ThemeManager.PRESET_BLUE_TEAL, ThemeManager.PRESET_CUSTOM};
-        int[] labels = {R.string.settings_preset_purple_black, R.string.settings_preset_blue_teal, R.string.settings_preset_custom};
-        int[][] previewColors = {
-                {ThemeManager.DEFAULT_A, ThemeManager.DEFAULT_B, ThemeManager.DEFAULT_C},
-                {0xFF2F81FF, 0xFF6D5DFC, 0xFF13C8A6},
-                null, // custom: filled from live custom colors
+        String[] ids = ThemeManager.presetIds(); // 5 presets + custom
+        int[] labels = {
+                R.string.settings_preset_purple_black,
+                R.string.settings_preset_blue_teal,
+                R.string.settings_preset_emerald,
+                R.string.settings_preset_ember,
+                R.string.settings_preset_slate,
+                R.string.settings_preset_custom,
         };
 
+        LinearLayout row = null;
         for (int i = 0; i < ids.length; i++) {
             final String presetId = ids[i];
             final int index = i;
+
+            if (i % 3 == 0) {
+                // New row of three (two rows: 5 presets + Custom).
+                row = new LinearLayout(activity);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setWeightSum(3f);
+                LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+                if (i > 0) rowParams.topMargin = dp(8);
+                wrap.addView(row, rowParams);
+            }
 
             LinearLayout cell = new LinearLayout(activity);
             cell.setOrientation(LinearLayout.VERTICAL);
@@ -290,24 +342,23 @@ final class SettingsSheet {
             ringBg.setStroke(dp(2), color(R.color.brand_a));
             ring.setBackground(ringBg);
             ring.setVisibility(View.INVISIBLE);
-            ringFrame.addView(ring, new FrameLayout.LayoutParams(dp(60), dp(60), Gravity.CENTER));
+            ringFrame.addView(ring, new FrameLayout.LayoutParams(dp(56), dp(56), Gravity.CENTER));
             presetRings[index] = ring;
 
             View swatch = new View(activity);
             GradientDrawable swatchBg = new GradientDrawable();
             swatchBg.setShape(GradientDrawable.OVAL);
             swatchBg.setOrientation(GradientDrawable.Orientation.TL_BR);
-            if (previewColors[i] != null) {
-                swatchBg.setColors(previewColors[i]);
-            }
+            int[] accents = ThemeManager.gradientForPreset(activity, presetId);
+            swatchBg.setColors(new int[]{accents[0], accents[1], accents[2]});
             swatchBg.setStroke(dp(1), color(R.color.swatch_stroke));
             swatch.setBackground(swatchBg);
-            ringFrame.addView(swatch, new FrameLayout.LayoutParams(dp(50), dp(50), Gravity.CENTER));
+            ringFrame.addView(swatch, new FrameLayout.LayoutParams(dp(46), dp(46), Gravity.CENTER));
             presetSwatches[index] = swatch;
 
-            cell.addView(ringFrame, new LinearLayout.LayoutParams(dp(60), dp(60)));
+            cell.addView(ringFrame, new LinearLayout.LayoutParams(dp(56), dp(56)));
 
-            TextView label = text(str(labels[i]), 12, true, color(R.color.chip_text));
+            TextView label = text(str(labels[i]), 11, true, color(R.color.chip_text));
             LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
             labelParams.topMargin = dp(6);
@@ -323,16 +374,15 @@ final class SettingsSheet {
                 activity.applyDynamicAccent();
             });
 
-            LinearLayout.LayoutParams cellParams = new LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-            row.addView(cell, cellParams);
+            row.addView(cell, new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         }
-        return row;
+        return wrap;
     }
 
     private void refreshPresetSelection() {
         String active = ThemeManager.getPreset(activity);
-        String[] ids = {ThemeManager.PRESET_PURPLE_BLACK, ThemeManager.PRESET_BLUE_TEAL, ThemeManager.PRESET_CUSTOM};
+        String[] ids = ThemeManager.presetIds();
         for (int i = 0; i < ids.length; i++) {
             presetRings[i].setVisibility(ids[i].equals(active) ? View.VISIBLE : View.INVISIBLE);
         }
@@ -402,6 +452,7 @@ final class SettingsSheet {
                 int a = isStart ? picked : ThemeManager.getCustomA(activity);
                 int b = isStart ? ThemeManager.getCustomB(activity) : picked;
                 ThemeManager.setCustomColors(activity, a, b, ThemeManager.isCustomSolid(activity));
+                refreshPresetSelection();
                 refreshCustomSwatches();
                 refreshPreview();
                 activity.applyDynamicAccent();
@@ -414,12 +465,99 @@ final class SettingsSheet {
     private void refreshCustomSwatches() {
         ((GradientDrawable) startSwatch.getBackground()).setColor(ThemeManager.getCustomA(activity));
         ((GradientDrawable) endSwatch.getBackground()).setColor(ThemeManager.getCustomB(activity));
-        ((GradientDrawable) presetSwatches[2].getBackground())
-                .setColors(new int[]{ThemeManager.getCustomA(activity), ThemeManager.getCustomB(activity)});
+        ((GradientDrawable) presetSwatches[5].getBackground())
+                .setColors(new int[]{ThemeManager.getCustomA(activity), ThemeManager.getCustomB(activity),
+                        ThemeManager.getCustomB(activity)});
         suppressSolidListener = true;
         solidSwitch.setChecked(ThemeManager.isCustomSolid(activity));
         suppressSolidListener = false;
         endRow.setVisibility(ThemeManager.isCustomSolid(activity) ? View.GONE : View.VISIBLE);
+    }
+
+    // ------------------------------------------------------------ background
+
+    private LinearLayout buildBackgroundGrid() {
+        LinearLayout grid = new LinearLayout(activity);
+        grid.setOrientation(LinearLayout.VERTICAL);
+
+        String[] ids = {
+                ThemeManager.BG_AURORA, ThemeManager.BG_MESH,
+                ThemeManager.BG_STARFIELD, ThemeManager.BG_NONE,
+        };
+        int[] labels = {
+                R.string.settings_bg_aurora, R.string.settings_bg_mesh,
+                R.string.settings_bg_starfield, R.string.settings_bg_none,
+        };
+        int[] hints = {
+                R.string.settings_bg_aurora_hint, R.string.settings_bg_mesh_hint,
+                R.string.settings_bg_starfield_hint, R.string.settings_bg_none_hint,
+        };
+
+        for (int i = 0; i < ids.length; i++) {
+            final String bgId = ids[i];
+            final int index = i;
+
+            LinearLayout button = new LinearLayout(activity);
+            button.setOrientation(LinearLayout.VERTICAL);
+            button.setGravity(Gravity.CENTER_VERTICAL);
+            button.setClickable(true);
+            button.setFocusable(true);
+            button.setForeground(ripple());
+            button.setPadding(dp(14), dp(10), dp(14), dp(10));
+
+            TextView label = text(str(labels[index]), 13, true, color(R.color.chip_text));
+            button.addView(label);
+            TextView hint = text(str(hints[index]), 10, false, color(R.color.error_text));
+            LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            hintParams.topMargin = dp(1);
+            button.addView(hint, hintParams);
+
+            button.setOnClickListener(v -> {
+                ThemeManager.setBackground(activity, bgId);
+                refreshBackgroundSelection();
+            });
+            backgroundButtons[index] = button;
+
+            LinearLayout row = new LinearLayout(activity);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            if (i % 2 == 1) rowParams.topMargin = dp(8);
+            grid.addView(row, rowParams);
+            LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            if (i % 2 == 0) buttonParams.rightMargin = dp(8);
+            // Each row holds exactly one button; paired columns look like the
+            // reference sheet's 2-wide grid without a GridLayout dependency.
+            button.setLayoutParams(buttonParams);
+            row.addView(button);
+        }
+        return grid;
+    }
+
+    private void refreshBackgroundSelection() {
+        String active = ThemeManager.getBackground(activity);
+        String[] ids = {
+                ThemeManager.BG_AURORA, ThemeManager.BG_MESH,
+                ThemeManager.BG_STARFIELD, ThemeManager.BG_NONE,
+        };
+        for (int i = 0; i < ids.length; i++) {
+            LinearLayout button = (LinearLayout) backgroundButtons[i];
+            boolean selected = ids[i].equals(active);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setCornerRadius(dp(14));
+            if (selected) {
+                // Translucent accent fill + accent stroke (the reference sheet's
+                // "violet-600/25 border-violet-500" chip treatment).
+                bg.setColor((color(R.color.brand_a) & 0x00FFFFFF) | 0x33000000);
+                bg.setStroke(dp(1), color(R.color.brand_a));
+            } else {
+                bg.setColor(color(R.color.chip_bg));
+                bg.setStroke(dp(1), color(R.color.chip_stroke));
+            }
+            button.setBackground(bg);
+        }
     }
 
     // --------------------------------------------------------------- motion
@@ -447,13 +585,56 @@ final class SettingsSheet {
         row.addView(textCol, textColParams);
 
         motionSwitch = new Switch(activity);
-        motionSwitch.setChecked(ThemeManager.isReduceMotion(activity));
+        motionSwitch.setChecked(ThemeManager.isReduceMotionRaw(activity));
         motionSwitch.setThumbTintList(ColorStateList.valueOf(color(R.color.brand_a)));
         motionSwitch.setOnCheckedChangeListener((btn, checked) -> {
             ThemeManager.setReduceMotion(activity, checked);
             activity.applyDynamicAccent();
         });
         row.addView(motionSwitch);
+
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        rowParams.topMargin = dp(12);
+        wrap.addView(row, rowParams);
+        return wrap;
+    }
+
+    // -------------------------------------------------------- external links
+
+    private LinearLayout buildExternalLinksRow() {
+        LinearLayout wrap = new LinearLayout(activity);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        wrap.addView(sectionLabel(str(R.string.settings_ecosystem_title)), wrapTop(0));
+
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout textCol = new LinearLayout(activity);
+        textCol.setOrientation(LinearLayout.VERTICAL);
+        textCol.addView(text(str(R.string.settings_open_links_externally), 14, true, color(R.color.chip_text)));
+        TextView desc = text(str(R.string.settings_open_links_externally_desc), 12, false, color(R.color.error_text));
+        LinearLayout.LayoutParams descParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        descParams.topMargin = dp(2);
+        textCol.addView(desc, descParams);
+        LinearLayout.LayoutParams textColParams = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        textColParams.rightMargin = dp(12);
+        row.addView(textCol, textColParams);
+
+        externalLinksSwitch = new Switch(activity);
+        externalLinksSwitch.setChecked(ThemeManager.isOpenLinksExternally(activity));
+        externalLinksSwitch.setThumbTintList(ColorStateList.valueOf(color(R.color.brand_a)));
+        externalLinksSwitch.setOnCheckedChangeListener((btn, checked) -> {
+            ThemeManager.setOpenLinksExternally(activity, checked);
+            Toast.makeText(activity, checked
+                            ? R.string.settings_links_external_on
+                            : R.string.settings_links_external_off,
+                    Toast.LENGTH_SHORT).show();
+        });
+        row.addView(externalLinksSwitch);
 
         LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -501,6 +682,61 @@ final class SettingsSheet {
         return wrap;
     }
 
+    // ---------------------------------------------------------- display mode
+
+    private LinearLayout buildDisplayModeRow() {
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setWeightSum(3f);
+
+        String[] modes = {
+                ThemeManager.COLOR_DARK, ThemeManager.COLOR_LIGHT, ThemeManager.COLOR_SYSTEM,
+        };
+        int[] labels = {
+                R.string.settings_display_dark, R.string.settings_display_light, R.string.settings_display_system,
+        };
+
+        for (int i = 0; i < modes.length; i++) {
+            final String mode = modes[i];
+            TextView button = text(str(labels[i]), 12, true, color(R.color.chip_text));
+            button.setGravity(Gravity.CENTER);
+            button.setMinHeight(dp(48)); // ≥48dp touch target
+            button.setClickable(true);
+            button.setForeground(ripple());
+            button.setPadding(dp(8), dp(8), dp(8), dp(8));
+            button.setOnClickListener(v -> {
+                boolean recreate = ThemeManager.setColorModeAndCompare(activity, mode);
+                refreshDisplayModeSelection();
+                if (recreate) activity.recreateForColorMode();
+            });
+            displayModeButtons[i] = button;
+            row.addView(button, weightWithEndMargin(i < modes.length - 1 ? dp(8) : 0));
+        }
+        return row;
+    }
+
+    private void refreshDisplayModeSelection() {
+        String active = ThemeManager.getColorMode(activity);
+        String[] modes = {
+                ThemeManager.COLOR_DARK, ThemeManager.COLOR_LIGHT, ThemeManager.COLOR_SYSTEM,
+        };
+        for (int i = 0; i < modes.length; i++) {
+            TextView button = displayModeButtons[i];
+            GradientDrawable bg = new GradientDrawable();
+            bg.setCornerRadius(dp(14));
+            if (modes[i].equals(active)) {
+                bg.setColor((color(R.color.brand_a) & 0x00FFFFFF) | 0x33000000);
+                bg.setStroke(dp(1), color(R.color.brand_a));
+                button.setTextColor(color(R.color.title_text));
+            } else {
+                bg.setColor(color(R.color.chip_bg));
+                bg.setStroke(dp(1), color(R.color.chip_stroke));
+                button.setTextColor(color(R.color.chip_text));
+            }
+            button.setBackground(bg);
+        }
+    }
+
     // -------------------------------------------------------------- footer
 
     private LinearLayout buildButtonsRow() {
@@ -515,14 +751,21 @@ final class SettingsSheet {
         reset.setForeground(ripple());
         reset.setPadding(dp(12), 0, dp(12), 0);
         reset.setOnClickListener(v -> {
+            boolean wasLight = !ThemeManager.isDark(activity);
             ThemeManager.resetToDefault(activity);
             refreshPresetSelection();
             refreshCustomSwatches();
+            refreshBackgroundSelection();
+            refreshDisplayModeSelection();
             customBlock.setVisibility(View.GONE);
             motionSwitch.setChecked(false);
+            if (externalLinksSwitch != null) externalLinksSwitch.setChecked(false);
             if (securitySwitch != null) securitySwitch.setChecked(true);
             refreshPreview();
             activity.applyDynamicAccent();
+            if (wasLight != !ThemeManager.isDark(activity)) {
+                activity.recreateForColorMode(); // default is dark
+            }
             Toast.makeText(activity, R.string.settings_reset_done, Toast.LENGTH_SHORT).show();
         });
         LinearLayout.LayoutParams resetParams = new LinearLayout.LayoutParams(
@@ -684,6 +927,13 @@ final class SettingsSheet {
             w.setAttributes(lp);
         }
         picker.show();
+    }
+
+    private LinearLayout.LayoutParams weightWithEndMargin(int margin) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        params.rightMargin = margin;
+        return params;
     }
 
     private static Integer parseHex(String raw) {

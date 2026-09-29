@@ -23,6 +23,7 @@
     <string name="tools_marketplace">Marketplace</string>
     <string name="tools_clear_session">Clear app session</string>
     <string name="tools_settings">Settings</string>
+    <string name="tools_menu_version">v%1$s · victuscloud.com</string>
 
     <string name="settings_title">Appearance</string>
     <string name="settings_subtitle">Personalize colors, gradients, and motion</string>
@@ -31,7 +32,32 @@
     <string name="settings_theme">Theme</string>
     <string name="settings_preset_purple_black">Purple → Black</string>
     <string name="settings_preset_blue_teal">Blue → Teal</string>
+    <string name="settings_preset_emerald">Emerald → Night</string>
+    <string name="settings_preset_ember">Ember → Night</string>
+    <string name="settings_preset_slate">Slate → Night</string>
     <string name="settings_preset_custom">Custom</string>
+
+    <string name="settings_background">Background</string>
+    <string name="settings_background_hint">Ambient backdrop behind the interface. Holds still when animations are reduced. Applies to the bundled home screen.</string>
+    <string name="settings_bg_aurora">Aurora</string>
+    <string name="settings_bg_aurora_hint">Drifting light fields</string>
+    <string name="settings_bg_mesh">Mesh</string>
+    <string name="settings_bg_mesh_hint">Scanned node grid</string>
+    <string name="settings_bg_starfield">Starfield</string>
+    <string name="settings_bg_starfield_hint">Particle drift</string>
+    <string name="settings_bg_none">Off</string>
+    <string name="settings_bg_none_hint">Flat background</string>
+
+    <string name="settings_ecosystem_title">Ecosystem</string>
+    <string name="settings_open_links_externally">Open links externally</string>
+    <string name="settings_open_links_externally_desc">Opens Victus Cloud URLs in your device browser instead of the in-app shell.</string>
+    <string name="settings_links_external_on">External links will open in your browser</string>
+    <string name="settings_links_external_off">External links will open in-app</string>
+
+    <string name="settings_display_title">Display mode</string>
+    <string name="settings_display_dark">Dark</string>
+    <string name="settings_display_light">Light</string>
+    <string name="settings_display_system">System</string>
     <string name="settings_start_color">Start color</string>
     <string name="settings_end_color">End color</string>
     <string name="settings_solid_color">Solid color (no gradient)</string>
@@ -48,7 +74,7 @@
     <string name="color_picker_invalid_hex">Enter a valid hex color, e.g. #7C3AED</string>
 
     <string name="clear_session_title">Clear app session?</string>
-    <string name="clear_session_message">This clears WebView cookies, storage, cache, and panel sessions in the app.</string>
+    <string name="clear_session_message">This clears the app\'s local WebView data — cookies, site storage, cache, form history and back history — for a fresh start. Nothing is deleted from Victus Cloud servers or your account.</string>
     <string name="clear_session_confirm">Clear</string>
     <string name="clear_session_done">Session cleared</string>
     <string name="cancel">Cancel</string>

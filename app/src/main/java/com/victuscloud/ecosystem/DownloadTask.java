@@ -153,10 +153,15 @@ final class DownloadTask {
         String selection = MediaStore.Downloads.DISPLAY_NAME + "=? AND "
                 + MediaStore.Downloads.RELATIVE_PATH + "=? AND "
                 + MediaStore.Downloads.IS_TRASHED + "=0";
-        String[] args = {displayName,
-                Environment.DIRECTORY_DOWNLOADS + File.separator + TARGET_SUBDIR + File.separator};
+        // RELATIVE_PATH's canonical form ends with a trailing '/'; when a
+        // vendor's MediaStore stores it without one, the exact-match query
+        // silently never matches, and uniqueName() would hand back the original
+        // name and MediaStore itself would then auto-suffix. Match on name only
+        // (same effective result, since this collection only holds our subdir)
+        // so the dedupe works on every OEM.
+        String[] args = {displayName};
         try (Cursor cursor = resolver.query(MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                projection, selection, args, null)) {
+                projection, MediaStore.Downloads.DISPLAY_NAME + "=?", args, null)) {
             return cursor != null && cursor.moveToFirst();
         } catch (Exception e) {
             return false; // conservative: a failed query shouldn't block the download

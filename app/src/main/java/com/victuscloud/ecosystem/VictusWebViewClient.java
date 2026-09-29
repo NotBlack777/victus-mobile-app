@@ -34,6 +34,7 @@ final class VictusWebViewClient extends WebViewClient {
 
     private static final String ROOT_DOMAIN = "victuscloud.com";
     private static final String ASSETS_HOST = "appassets.androidplatform.net";
+    private static final String ASSETS_HOST_URL = "https://" + ASSETS_HOST;
 
     private final MainActivity activity;
     private final WebViewAssetLoader assetLoader;
@@ -55,7 +56,17 @@ final class VictusWebViewClient extends WebViewClient {
     @Override
     public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
         Uri uri = request.getUrl();
-        if (isInternalHost(uri)) return false; // stay inside the app
+        if (isInternalHost(uri)) {
+            // Reference-app setting: when "Open links externally" is on, Victus
+            // Cloud links tapped inside a loaded page go to the device browser.
+            // The bundled home screen and the top-bar dock always stay in-app.
+            String from = view.getUrl();
+            boolean fromBundledHome = from != null && from.startsWith(ASSETS_HOST_URL);
+            if (!fromBundledHome && ThemeManager.isOpenLinksExternally(activity)) {
+                return openExternally(uri);
+            }
+            return false; // stay inside the app
+        }
         return openExternally(uri);
     }
 
@@ -70,6 +81,21 @@ final class VictusWebViewClient extends WebViewClient {
         return ASSETS_HOST.equals(host)
                 || ROOT_DOMAIN.equals(host)
                 || host.endsWith("." + ROOT_DOMAIN);
+    }
+
+    /**
+     * True when the failing certificate belongs to the page currently loaded —
+     * i.e. this is (very likely) the main frame or a same-host subresource, and
+     * the user should see the error screen. A different host means an embedded
+     * third-party resource, which is refused without blanking the page.
+     */
+    private static boolean isSameHostAsPage(WebView view, String failingUrl) {
+        String current = view.getUrl();
+        if (current == null) return true; // can't tell → show the error screen (fail closed)
+        String failingHost = Uri.parse(failingUrl).getHost();
+        String currentHost = Uri.parse(current).getHost();
+        if (failingHost == null || currentHost == null) return true;
+        return failingHost.equalsIgnoreCase(currentHost);
     }
 
     /**
@@ -139,18 +165,30 @@ final class VictusWebViewClient extends WebViewClient {
     }
 
     /**
-     * Secure-by-default TLS policy: an invalid certificate always blocks the
-     * page — the old "proceed anyway" pattern must never come back. Silently
-     * calling {@code handler.proceed()} would "fix" the error screen but turn
-     * off certificate validation entirely, which is a real security hole (and
-     * a Play Store policy violation) — not something to do just to make an
-     * error message go away.
+     * Secure-by-default TLS policy. Three rules, in order:
      *
-     * <p>What we <em>can</em> safely do is make the message and next step
-     * actually useful: most SSL_UNTRUSTED / SSL_NOTYETVALID reports in the
-     * wild trace back to the device's system clock being wrong or an outdated
-     * Android System WebView component rather than a real attack, so those two
-     * codes get a specific hint and an "Update WebView" shortcut.</p>
+     * <ol>
+     *   <li><b>Third-party subresources (CDNs, fonts, analytics) are refused
+     *       silently.</b> A single embedded resource on a foreign host with a bad
+     *       certificate must not blank the entire page with a scary error screen —
+     *       the resource is cancelled, the page renders without it. (The page's
+     *       own host failing still gets the full-screen treatment.)</li>
+     *   <li><b>The "Trust Victus Cloud certificates" setting (default on) only
+     *       covers {@code SSL_UNTRUSTED} and {@code SSL_NOTYETVALID} on real
+     *       *.victuscloud.com hosts</b> — the two codes actually caused by an
+     *       outdated device root store or a wrong clock. It never blesses an
+     *       expired or hostname-mismatched certificate: those are blocked even
+     *       for trusted domains, because proceeding there would be genuinely
+     *       unsafe.</li>
+     *   <li><b>Everything else is cancelled.</b> Silently calling
+     *       {@code handler.proceed()} for any other case would turn off
+     *       certificate validation — a real security hole and a Play Store
+     *       policy violation.</li>
+     * </ol>
+     *
+     * <p>Blocked main-frame errors still get the error screen, whose message
+     * already points at the two realistic benign causes (stale Android System
+     * WebView, wrong device date &amp; time).</p>
      */
     @Override
     public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
@@ -163,14 +201,26 @@ final class VictusWebViewClient extends WebViewClient {
             }
         }
 
-        // If this is an internal Victus Cloud domain and trust is enabled:
-        // Automatically proceed so the user is not blocked by outdated device root stores.
-        if (isInternal && ThemeManager.isTrustVictusSsl(activity)) {
-            handler.proceed();
+        // Embedded third-party content on a foreign host: refuse the resource,
+        // keep the page. (If we can't tell whose request it was, fall through
+        // and show the full error screen — fail closed, not open.)
+        if (url != null && !isSameHostAsPage(view, url)) {
+            handler.cancel();
             return;
         }
 
         int code = error.getPrimaryError();
+        boolean deviceTrustIssue = code == SslError.SSL_UNTRUSTED || code == SslError.SSL_NOTYETVALID;
+
+        // Settings → Security → "Trust Victus Cloud certificates": accept a
+        // Victus certificate the device's root store doesn't know yet. Scoped
+        // to *.victuscloud.com AND to the two device-side error codes — an
+        // expired or mismatched certificate is never auto-accepted.
+        if (isInternal && deviceTrustIssue && ThemeManager.isTrustVictusSsl(activity)) {
+            handler.proceed();
+            return;
+        }
+
         String message;
         boolean offerWebViewUpdate;
         switch (code) {

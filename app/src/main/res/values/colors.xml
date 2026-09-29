@@ -32,4 +32,10 @@
     <color name="sheet_stroke">#1F1A0B2E</color>
     <color name="sheet_handle">#332E1065</color>
     <color name="swatch_stroke">#332E1065</color>
+
+    <!-- Tools overflow menu: translucent glass card (reference drawer surface). -->
+    <color name="menu_bg">#F20C0C14</color>
+    <color name="menu_stroke">#14FFFFFF</color>
+    <color name="menu_icon">#94A3B8</color>
+    <color name="danger">#F87171</color>
 </resources>
