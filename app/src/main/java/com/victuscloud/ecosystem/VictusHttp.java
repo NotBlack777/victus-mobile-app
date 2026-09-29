@@ -94,6 +94,31 @@ final class VictusHttp {
     }
 
     /**
+     * A state-changing call (POST/PUT/DELETE) authenticated by an API key.
+     *
+     * <p>This panel applies its CSRF check to client-API writes even when they
+     * carry a bearer key — a key-authenticated POST without the token is answered
+     * 419 "CSRF token mismatch." (verified against control.victuscloud.com). The
+     * panel's own SPA always sends one, and so does the session path here
+     * ({@link #post}). So the write first collects the panel's CSRF cookies in a
+     * throwaway jar — {@code GET /sanctum/csrf-cookie} issues them without needing
+     * a session, and the login page sets the same ones — and {@link #request} then
+     * echoes the cookie's token back as {@code X-XSRF-TOKEN}. The anonymous
+     * cookies carry no credential, so the key call still never carries the
+     * user's session.</p>
+     */
+    static Response bearerWrite(String method, String path, String jsonBody, String bearer) {
+        VictusHttp jar = new VictusHttp();
+        VictusHttp.Response seed = jar.get("/sanctum/csrf-cookie");
+        if (seed.isNetworkFailure() || jar.cookies.get("XSRF-TOKEN") == null) {
+            // Either route may be missing on a panel build; the login page sets
+            // the same pair of cookies.
+            jar.get(VictusApi.PATH_LOGIN);
+        }
+        return jar.request(method, path, jsonBody, null, bearer, true);
+    }
+
+    /**
      * @param csrfToken fallback CSRF token, sent as {@code X-CSRF-TOKEN} only when
      *                  the jar holds no {@code XSRF-TOKEN} cookie.
      * @param bearer    {@code Authorization} header value, or null.

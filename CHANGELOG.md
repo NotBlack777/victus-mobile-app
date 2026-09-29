@@ -1,4 +1,31 @@
-# Changelog — Victus Cloud 2.4.0 (runs on any Android: custom ROMs, real servers)
+# Changelog
+
+## Unreleased — verified against the live panel
+
+**Proven live on `control.victuscloud.com`** (a 10-server real fleet, account
+`icy`): `GET /api/client/account` → 200, `GET /api/client` → 200 (10 servers),
+`POST …/power {"signal":"restart"|"stop"|"start"}` → 204,
+`POST …/command` → 204, `GET …/resources` → 200 — driven by the app's own
+network classes through `tools/panel-check` (`--mock` runs the same chain
+against a local contract fixture in CI).
+
+**Fixed: key-authenticated writes were rejected with 419 on the live panel.**
+The panel applies its CSRF check to client-API POSTs even when they carry a
+bearer key, so power actions and console commands from an API-key session failed
+with "CSRF token mismatch." `VictusHttp.bearerWrite` now seeds its throwaway
+cookie jar from `/sanctum/csrf-cookie` (the login page as fallback) and echoes
+the `XSRF-TOKEN` cookie back as the header, exactly like the panel's own SPA;
+`VictusAuth.apiPost` uses it. `GET` calls are unchanged.
+
+**Panel quirks learned from the live run** (worth handling in the UI):
+`GET …/resources` returns a lagging, sometimes contradictory snapshot (state
+stuck on `stopping` while network counters advance; uptime keeps rising through
+a restart instead of resetting), the fleet listing reports `limits` of `0` and
+an empty `status` for some entries, and `connect_hostname` can be null — the
+allocation `ip:port` (here `0.0.0.0` + port) is the reliable connect info.
+Power actions are accepted (204) immediately regardless.
+
+# Victus Cloud 2.4.0 (runs on any Android: custom ROMs, real servers)
 
 This release makes the app work the same whether it is installed on a Pixel, a
 GrapheneOS phone, a CalyxOS phone, a LineageOS device without Google services, or

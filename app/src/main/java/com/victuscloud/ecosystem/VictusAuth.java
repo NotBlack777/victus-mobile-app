@@ -579,7 +579,9 @@ final class VictusAuth {
 
         VictusHttp.Response response;
         if (current.isApiKey()) {
-            response = VictusHttp.bearerRequest("POST", path, jsonBody,
+            // Writes with a key still need the panel's CSRF token (see
+            // bearerWrite), unlike pure reads.
+            response = VictusHttp.bearerWrite("POST", path, jsonBody,
                     VictusApi.apiKeyHeader(current.identifier, current.secret));
         } else {
             // Session-cookie auth: the CSRF header comes from the XSRF-TOKEN cookie.

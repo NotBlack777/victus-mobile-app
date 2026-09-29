@@ -79,6 +79,12 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleDebug testDebugUnitTest --no-daemon --console=plain
 
+      # Drives the app's own VictusApi/VictusHttp against a contract-faithful
+      # panel over real TLS sockets: sign-in, server list, power, console. Needs
+      # port 443, so it skips itself (exit 3) on a runner that cannot bind it.
+      - name: Panel contract check (local fixture)
+        run: sh ./tools/panel-check/mock-check.sh
+
       - name: Verify APK signature
         env:
           VICTUS_KEYSTORE_BASE64: ${{ secrets.VICTUS_KEYSTORE_BASE64 }}
