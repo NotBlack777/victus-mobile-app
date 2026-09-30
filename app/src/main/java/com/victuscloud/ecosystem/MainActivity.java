@@ -278,6 +278,15 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         // Quietly ask the release feed whether a newer build exists, so the
         // tools menu can badge itself. Never blocks the UI and never prompts.
         startBackgroundUpdateCheck();
+
+        // Probe the admin areas on every launch, once the stored session has been
+        // re-validated. The probe used to run only on onResume and after a
+        // sign-in, so a user who launched straight into the app — the normal way
+        // it is opened — never got an answer and the admin entry stayed hidden
+        // for an account that does have the role.
+        if (victusAuth != null && victusAuth.isSignedIn()) {
+            startAdminAreaCheck(true);
+        }
     }
 
     @Override
@@ -477,6 +486,20 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         hideErrorOverlay();
     }
 
+    /**
+     * Starts or ends a custom-drag hold on the pull-to-refresh gesture, as the
+     * page does. A method rather than a field write so the whole path the bridge
+     * takes is what the tests exercise.
+     */
+    void shellSetDragging(boolean dragging) {
+        this.dragInProgress = dragging;
+    }
+
+    /** Whether a custom drag currently holds the gesture (the chat bubble). */
+    boolean isDragInProgress() {
+        return dragInProgress;
+    }
+
     /** The saved-state key, so a test can build a realistic restore Bundle. */
     static String selectedTabKeyForTest() {
         return KEY_SELECTED_TAB;
@@ -508,6 +531,34 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
             webView.reload();
         });
         pullRefresh.setEnabled(false);
+
+        // The single most important line for scrolling.
+        //
+        // SwipeRefreshLayout decides whether to steal a vertical drag by asking
+        // canChildScrollUp(). Left to its own device it inspects its direct child
+        // with View.canScrollVertically(-1) and caches that answer — but a WebView
+        // is a scrolling *compositor*: it does not update that flag until after
+        // it has already consumed (and discarded) the touch. The result on a real
+        // device is that the layout claims the page "cannot scroll up" on almost
+        // every gesture, takes the drag, and the page never scrolls at all.
+        //
+        // Asking the WebView directly, uncached, and never letting the layout
+        // intercept a gesture the page can handle itself fixes both reported
+        // symptoms: the page scrolls, and the refresh spinner only appears when
+        // the page is genuinely already at the very top.
+        pullRefresh.setOnChildScrollUpCallback((parent, child) -> webViewCanScrollUp());
+
+        // Same gesture, opposite direction: a drag on the draggable chat bubble
+        // is a drag, not a scroll and not a refresh. The page signals it here so
+        // the layout stands down for the duration of the drag.
+        webView.setOnTouchListener((v, event) -> {
+            if (dragInProgress) {
+                // Consume nothing: the bubble handles its own gesture. Just make
+                // sure the parent cannot intercept it out from under the page.
+                v.getParent().requestDisallowInterceptTouchEvent(true);
+            }
+            return false;
+        });
         // The gesture must own the full screen for the pull to start anywhere,
         // so the wrapper goes in at index 0 and sits under the progress bar.
         rootView.addView(pullRefresh, 0, new FrameLayout.LayoutParams(
@@ -897,6 +948,9 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
      * reloads the WebView, so switching themes is effectively free.
      */
     void applyDynamicAccent() {
+        // The engine's own widgets (form controls, scrollbars, keyboard) follow
+        // the user's choice, not the OS setting.
+        WebViewSetup.applyColorScheme(webView, ThemeManager.isDark(this));
         if (pageProgress != null) {
             pageProgress.setProgressTintList(ColorStateList.valueOf(ThemeManager.solid(this)));
         }
@@ -936,7 +990,36 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         return ASSETS_HOST.equals(host)
                 || "victuscloud.com".equals(host)
                 || host.endsWith(".victuscloud.com");
-    }    /**
+    }
+
+    /**
+     * Whether the page currently has somewhere to scroll <em>up</em> to.
+     *
+     * <p>Consulted live on every touch, never cached, because a WebView's answer
+     * changes as the user scrolls and a stale value is exactly what makes a
+     * pull-to-refresh wrapper swallow ordinary scrolling.</p>
+     *
+     * <p>An overridable seam for the same reason {@link #isWebViewUsable()} is
+     * one: Robolectric ships a WebView shadow that does not track scroll
+     * position at all, so without this the behaviour that actually fixed the
+     * bug could not be asserted on — it would report "cannot scroll up" for ever
+     * and the test would pass or fail for the wrong reason.</p>
+     */
+    protected boolean webViewCanScrollUp() {
+        if (webView == null) return true;
+        if (Build.VERSION.SDK_INT >= 23) return webView.canScrollVertically(-1);
+        // Pre-23 has no public equivalent; assume the page can scroll rather than
+        // risk stealing a gesture, which is the failure this whole fix is about.
+        return true;
+    }
+
+    /**
+     * Set by the page while a custom drag (the chat bubble) is in progress, so
+     * pull-to-refresh stands down for that gesture instead of treating it as a
+     * pull. Plain field, not a bridge round-trip: it is read on the UI thread
+     * during touch dispatch and never outlives the gesture.
+     */
+    private volatile boolean dragInProgress = false;    /**
      * Pushes the native appearance config into the bundled React app: the live
      * accent gradient + reduce-motion flag as CSS custom properties, plus the
      * full native config object the web ThemeContext now listens for
@@ -1426,17 +1509,22 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         // ever queue one probe rather than one per resume.
         if (!lastAdminAreaCheck.compareAndSet(previous, now)) return;
 
-        authIo.execute(() -> {
-            VictusHttp.Response account = auth.apiGet(VictusApi.PATH_ACCOUNT);
-            VictusApi.Account parsed = VictusApi.parseAccount(account.body);
-            if (parsed == null || !parsed.rootAdmin) {
-                // Not an admin (or the check failed): an empty list means the
-                // web menu renders nothing admin-related at all.
-                adminAreas.set(new AdminAreaState(new String[0]));
-                return;
-            }
-            adminAreas.set(new AdminAreaState(KNOWN_ADMIN_AREAS));
-        });
+        try {
+            authIo.execute(() -> {
+                VictusHttp.Response account = auth.apiGet(VictusApi.PATH_ACCOUNT);
+                VictusApi.Account parsed = VictusApi.parseAccount(account.body);
+                if (parsed == null || !parsed.rootAdmin) {
+                    // Not an admin (or the check failed): an empty list means the
+                    // web menu renders nothing admin-related at all.
+                    adminAreas.set(new AdminAreaState(new String[0]));
+                    return;
+                }
+                adminAreas.set(new AdminAreaState(KNOWN_ADMIN_AREAS));
+            });
+        } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
+            // onDestroy already shut the executor down. A probe that cannot run is
+            // not worth crashing over, and the app is on its way out anyway.
+        }
     }
 
     // ================================================================== misc
@@ -1669,6 +1757,46 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
                     CompatSheet.show(activity);
                 } else {
                     SettingsSheet.show(activity);
+                }
+            });
+        }
+
+        /**
+         * Tells the shell a custom drag (the chat bubble) has started or ended.
+         *
+         * <p>Without this the pull-to-refresh wrapper claims the vertical part of
+         * the gesture, so dragging the bubble both refused to move it and made
+         * the page try to refresh instead. The shell stands down for exactly the
+         * duration of the drag.</p>
+         */
+        @JavascriptInterface
+        public void shellSetDragging(boolean dragging) {
+            activity.shellSetDragging(dragging);
+        }
+
+        /**
+         * Applies a colour-mode change made in the web app (the header's
+         * light/dark button) to the native layer, so the system bars, the native
+         * sheets and the WebView's own colour scheme follow it. Without this the
+         * web app flipped and the shell snapped it back on the next theme
+         * injection, which is why the button looked like it did nothing.
+         */
+        @JavascriptInterface
+        public void shellSetColorMode(String mode) {
+            final String normalized = mode == null ? ThemeManager.COLOR_SYSTEM
+                    : mode.trim().toLowerCase(java.util.Locale.US);
+            if (!ThemeManager.COLOR_DARK.equals(normalized)
+                    && !ThemeManager.COLOR_LIGHT.equals(normalized)
+                    && !ThemeManager.COLOR_SYSTEM.equals(normalized)) {
+                return; // refuse anything we do not recognise
+            }
+            activity.runOnUiThread(() -> {
+                if (activity.isFinishing() || activity.isDestroyed()) return;
+                if (ThemeManager.setColorModeAndCompare(activity, normalized)) {
+                    // values/values-night have to re-resolve for the native bars.
+                    activity.recreateForColorMode();
+                } else {
+                    activity.applyDynamicAccent();
                 }
             });
         }

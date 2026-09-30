@@ -18,7 +18,7 @@ import { useToast } from './Toast.tsx';
 import { useTheme } from '../context/ThemeContext.tsx';
 import { ControlDashboard } from './ControlDashboard.tsx';
 import { ServiceControlScreen } from './ServiceControlScreen.tsx';
-import { VictusService, REAL_VICTUS_SERVICES } from '../services/controlData.ts';
+import { VictusService } from '../services/controlData.ts';
 import {
   PanelServer,
   fetchServers,
@@ -59,19 +59,12 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
   // Selected service for the per-server control screen
   const [selectedService, setSelectedService] = useState<VictusService | null>(null);
 
-  // Live fleet state so power actions in the per-server screen are reflected
-  // in the dashboard list and its stats (previously the list never updated).
-  const [serviceStates, setServiceStates] = useState<Record<string, VictusService['status']>>({});
-
   /**
    * The signed-in account's own servers, straight from control.victuscloud.com
-   * (`GET /api/client`). Null while signed out or before the first load, in which
-   * case the sample fleet is shown — labelled as sample data, never passed off as
-   * the user's own.
+   * (`GET /api/client`). Null while signed out or before the first load.
    */
   const [liveServers, setLiveServers] = useState<PanelServer[] | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
-  const isLiveAccount = session?.provider === 'victus';
 
   const refreshServers = useCallback(async () => {
     // fetchServers() resolves rather than throwing, so this cannot leave an
@@ -81,17 +74,13 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
       setLiveServers(result.data);
       setLiveError(null);
     } else {
+      // A failure must never fall back to sample data: the user has to be told
+      // the panel could not be read, not shown a fabricated fleet.
       setLiveError(result.error);
     }
   }, []);
 
   useEffect(() => {
-    // Only a real panel session has servers to read; demo mode keeps its samples.
-    if (!isLiveAccount) {
-      setLiveServers(null);
-      setLiveError(null);
-      return;
-    }
     let cancelled = false;
     void refreshServers().then(() => {
       if (cancelled) return;
@@ -99,25 +88,24 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isLiveAccount, session?.user.id, refreshServers]);
+  }, [session?.user.id, refreshServers]);
 
   const liveServices = useMemo(
     () => (liveServers ? liveServers.map((server, index) => toVictusService(server, index)) : null),
     [liveServers]
   );
 
-  const services = useMemo(() => {
-    if (liveServices) return liveServices;
-    return REAL_VICTUS_SERVICES.map((srv) => ({
-      ...srv,
-      status: serviceStates[srv.id] ?? srv.status,
-    }));
-  }, [liveServices, serviceStates]);
+  // Only the account's own servers, ever. The sample fleet that used to stand
+  // in whenever the panel could not be read is gone (4.6.3): a real user must
+  // never be shown servers that do not exist, and "can't reach the panel" is
+  // reported as that rather than papered over with fiction.
+  const services = useMemo(() => liveServices ?? [], [liveServices]);
 
-  const handleUpdateServiceStatus = (serviceId: string, status: VictusService['status']) => {
-    // For a live account the panel is the source of truth; the list is re-read
-    // after the action instead of being guessed at locally.
-    setServiceStates((prev) => ({ ...prev, [serviceId]: status }));
+  const handleUpdateServiceStatus = (_serviceId: string, _status: VictusService['status']) => {
+    // The panel is the single source of truth for a server's state, so nothing
+    // is guessed at locally: the list is simply re-read from it. The previous
+    // local override map only existed to annotate the sample fleet.
+    void refreshServers();
   };
 
   // Real data structures reflecting Victus Cloud properties

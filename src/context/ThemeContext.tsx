@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { ThemeConfig, ThemePreset, ColorMode, BackgroundStyle, DisplayPanel } from '../types.ts';
 import { CSS_VAR_NAMES, TOKEN_KEYS, hexToRgb, resolveAccents, resolveTokens } from '../theme/palettes.ts';
+import { shellSetColorMode } from '../services/victusBridge.ts';
 
 export {
   DEFAULT_A,
@@ -202,6 +203,11 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const setColorMode = useCallback((mode: ColorMode) => {
     setConfig((prev) => ({ ...prev, colorMode: mode }));
+    // Hand the choice to the shell as well. In the APK the native layer owns
+    // the persisted value and re-asserts it on every theme injection, so a
+    // web-only change is reverted on the next one — which is exactly why the
+    // header's light/dark button appeared to do nothing. No-op in a browser.
+    shellSetColorMode(mode);
   }, []);
 
   const setBackground = useCallback((style: BackgroundStyle) => {
@@ -216,12 +222,21 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setConfig((prev) => {
       const nextIsDark =
         prev.colorMode === 'system' ? !systemIsDark : prev.colorMode === 'dark' ? false : true;
-      return { ...prev, colorMode: nextIsDark ? 'dark' : 'light' };
+      const next: ColorMode = nextIsDark ? 'dark' : 'light';
+      // Same reason as setColorMode: the shell has to hear about it, or it will
+      // revert on the next theme injection. Toggling always lands on an
+      // explicit Dark or Light, never back to System, so the button and the
+      // Appearance → Display mode row can never disagree about what is active.
+      shellSetColorMode(next);
+      return { ...prev, colorMode: next };
     });
   }, [systemIsDark]);
 
   const resetToDefault = useCallback(() => {
     setConfig(initialConfig);
+    // Reset also has to reach the shell, or the native bars stay whatever the
+    // user had before the reset while the web app went back to the default.
+    shellSetColorMode(initialConfig.colorMode);
   }, []);
 
   const value = useMemo(

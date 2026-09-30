@@ -1,5 +1,80 @@
 # Changelog
 
+## Victus Cloud 4.6.3 (scrolling, the chat bubble, the theme toggle, and the demo account gone)
+
+`versionCode 51` / `versionName 4.6.3`. **Install this over 4.6.2.**
+
+Six of the reported problems turned out to be native-shell bugs rather than web
+bugs, and each one is fixed at the layer that actually caused it. Every fix is
+covered by a new regression test.
+
+### Fixed
+
+**Scrolling was dead on every page.** The pull-to-refresh layout (`SwipeRefreshLayout`)
+asked its child `canScrollVertically(-1)` before deciding whether to claim a
+vertical drag — and on a `WebView` that answer is a scrolling-compositor flag that
+does not update until *after* the touch has been consumed, so it claimed
+essentially every drag. Now the layout asks `MainActivity.webViewCanScrollUp()`
+on each gesture, so pull-to-refresh only arms at the very top of the page and
+never fights a scroll or a drag. New `PullToRefreshScrollTest` covers it.
+
+**The chat bubble could not be moved up, and tapping it did nothing.** Three
+separate bugs: the drag threshold was 5px so ordinary taps were swallowed as
+drags; the top clamp was the top-bar height instead of the safe-area margin, so
+the bubble was pinned and looked immovable; and `pointercancel` only cleared a
+flag, so an interrupted gesture could strand the bubble mid-drag. The bubble now
+uses a 10px threshold with an explicit click handler, can be dragged anywhere
+inside the safe area (never under the bottom channel chips), remembers its
+position, and tells the native shell to hold off pull-to-refresh for the duration
+of the drag.
+
+**The light/dark button did nothing.** The web app flipped its theme, but the
+native Appearance sheet owns the persisted value and re-asserted it on the next
+theme injection — so the change was reverted a moment later. The toggle now
+pushes the choice to the shell (`shellSetColorMode`), which applies the
+WebView's colour scheme and recreates the native chrome only when the mode
+really changes. Light and dark agree, the choice is restored on launch, and it
+cannot fight the Appearance setting.
+
+**"Create Account" opened the Control area.** The sign-up constant pointed at
+`https://billing.victuscloud.com`, whose own Register button lives at
+`.../register`. Corrected.
+
+**Admin rights were not recognised.** The admin probe only ran on resume or after
+sign-in, so a normal cold launch never asked; and the role check read only
+`root_admin`, so a full administrator who is not the owner was treated as a normal
+user. The probe now runs once at the end of `onCreate` and `parseAccount`
+accepts `root_admin || admin`. Authorisation is still enforced by the server —
+this only fixes what the app asks for.
+
+**Login identifier handling.** Emails are trimmed, stripped of whitespace and
+lowercased before they are sent; usernames keep their case, because the panel
+treats them as case-sensitive. Network failures already reported a distinct
+message, so a connection problem can never surface as "no account".
+
+### Removed
+
+**The demo account and every trace of it** — the demo sign-in, the sample fleet
+data, the "Demo" badge, the demo admin preview and the fake-service fallback. With
+nobody signed in the app shows the login screen, and a real user can never see
+fabricated data. `scripts/verify-webview.mjs` was rewritten to sign in through
+the app's own form against a stubbed panel fleet (53/53 checks) so nothing here
+still depends on demo data.
+
+### Tests added
+
+`LoginIdentityTest` (13), `PullToRefreshScrollTest` (6), `tests/shell4.test.ts`
+(13), plus rewritten demo assertions in `tests/auth.test.ts`. Totals: 154 JVM
+tests, 143 web tests, 53 WebView checks — all green, and nothing is minified,
+shrunk or obfuscated (`checkNoShrinking` still passes).
+
+### Not in this release
+
+Custom recovery email, Google sign-in and passkeys all need work on
+`control.victuscloud.com` (or a Google OAuth client and a Digital Asset Links
+file on `victuscloud.com`) before the app can be honest about them. They are not
+faked; see the release notes.
+
 ## Victus Cloud 4.6.2 (a sweep for the bugs the crash-fix release was hiding)
 
 `versionCode 50` / `versionName 4.6.2`. **Install this over 4.6.1.**

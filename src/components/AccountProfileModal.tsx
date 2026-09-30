@@ -211,13 +211,11 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({
                   Panel Credential
                 </span>
                 <span className="font-mono text-[11px] text-slate-200 truncate block">
-                  {session?.provider === 'demo'
-                    ? 'Demo data — no panel session'
-                    : session?.keyMasked
-                      ? `API key ${session.keyMasked}`
-                      : session?.credentialKind === 'session'
-                        ? 'Panel session cookie'
-                        : 'None'}
+                  {session?.keyMasked
+                    ? `API key ${session.keyMasked}`
+                    : session?.credentialKind === 'session'
+                      ? 'Panel session cookie'
+                      : 'None'}
                 </span>
               </div>
             </div>

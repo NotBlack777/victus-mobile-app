@@ -144,12 +144,39 @@ final class VictusApi {
     static String loginBody(String user, String password) {
         JSONObject body = new JSONObject();
         try {
-            body.put("user", user == null ? "" : user.trim());
+            body.put("user", normaliseLoginIdentifier(user));
             body.put("password", password == null ? "" : password);
         } catch (Exception impossible) {
             return "{}";
         }
         return body.toString();
+    }
+
+    /**
+     * Cleans up what a user actually types into the email/username field.
+     *
+     * <p>The panel's own frontend sends the raw value, but it is only ever given
+     * a value the browser's own autofill and {@code <input type="email">} have
+     * already normalised. The app has no such help: Android's autofill, a
+     * pasted address with a trailing space or newline, and a keyboard that
+     * autocapitalises the first letter all reach {@code signIn} verbatim. The
+     * panel answers any of those with the deliberately vague "No account
+     * matching those credentials could be found." — indistinguishable from a
+     * genuinely wrong password, and the single most likely reason a real user
+     * could not get in.</p>
+     *
+     * <p>Only an address is case-folded. A username is left exactly as typed,
+     * because usernames are case-sensitive on the panel and folding one would
+     * break a sign-in that otherwise worked.</p>
+     */
+    static String normaliseLoginIdentifier(String user) {
+        if (user == null) return "";
+        String cleaned = user.trim();
+        // A pasted value can carry a trailing newline or an internal space run
+        // from wrapped text; neither is ever legitimate in an address.
+        cleaned = cleaned.replaceAll("\\s+", "");
+        if (cleaned.indexOf('@') < 0) return cleaned;
+        return cleaned.toLowerCase(Locale.US);
     }
 
     static String checkpointBody(String confirmationToken, String authenticationCode) {
@@ -486,7 +513,16 @@ final class VictusApi {
             if (name == null) name = username != null ? username : email;
 
             String id = emptyToNull(attributes.optString("id", null));
-            boolean rootAdmin = attributes.optBoolean("root_admin", attributes.optBoolean("admin", false));
+            // Pterodactyl reports two separate things and conflating them is what
+            // locked admins out: `root_admin` is the *owner* flag, and a plain
+            // `admin` is a full administrator who is not the owner. The app used
+            // to read only root_admin (falling back to `admin`), so an account
+            // with full admin rights but not ownership was told it had no admin
+            // access at all. Either flag now grants the client's admin areas —
+            // which only decide what the app *offers*; the panel still authorises
+            // every request.
+            boolean rootAdmin = attributes.optBoolean("root_admin", false)
+                    || attributes.optBoolean("admin", false);
             boolean totp = attributes.optBoolean("use_totp", false);
 
             return new Account(id == null ? "" : id, username, email, name, rootAdmin, totp);

@@ -59,6 +59,16 @@ interface VictusNativeBridge {
   shellOpenNativeMenu?: (which: string) => void;
   /** Clears cookies/storage/cache after the web menu's own confirmation. */
   shellClearSession?: () => void;
+  /**
+   * Tells the shell a custom drag (the chat bubble) is in progress, so the
+   * pull-to-refresh wrapper stands down instead of claiming the gesture.
+   */
+  shellSetDragging?: (dragging: boolean) => void;
+  /**
+   * Applies a colour-mode change made in the web app to the native layer, so
+   * the system bars, native sheets and the engine's own widgets follow it.
+   */
+  shellSetColorMode?: (mode: 'dark' | 'light' | 'system') => void;
   /** Hands the page currently on screen to the device browser. */
   shellOpenExternal?: () => void;
   /** JSON array of admin-area base URLs this account may use; `[]` for everyone else. */

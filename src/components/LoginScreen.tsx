@@ -6,7 +6,6 @@ import {
   EyeOff,
   Loader2,
   AlertCircle,
-  Sparkles,
   Shield,
   Zap,
   KeyRound,
@@ -34,7 +33,7 @@ function openExternal(url: string) {
 }
 
 export const LoginScreen: React.FC = () => {
-  const { signIn, verifyTwoFactor, signInWithApiKey, signInDemo, requestPasswordReset, realAuthAvailable } =
+  const { signIn, verifyTwoFactor, signInWithApiKey, requestPasswordReset, realAuthAvailable } =
     useAuth();
   const { showToast } = useToast();
   const { config } = useTheme();
@@ -150,18 +149,6 @@ export const LoginScreen: React.FC = () => {
     }
   };
 
-  const handleDemo = async () => {
-    resetMessages();
-    setIsLoading(true);
-    try {
-      const { error } = await signInDemo();
-      if (error) setErrorMessage(error.message);
-      else showToast('Exploring Victus Cloud with demo data');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const switchMode = (next: Mode) => {
     resetMessages();
     setMode(next);
@@ -222,36 +209,18 @@ export const LoginScreen: React.FC = () => {
             </p>
           </div>
 
-          {/* Demo entry — the only path that uses sample data, and it says so */}
-          {mode === 'signin' && (
-            <>
-              <button
-                type="button"
-                onClick={handleDemo}
-                disabled={isLoading}
-                className="w-full mb-5 py-2.5 px-4 rounded-xl border border-amber-500/30 bg-amber-950/20 hover:bg-amber-900/30 text-amber-200 font-semibold text-xs transition-all active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer shadow-sm group"
-              >
-                <Sparkles className="w-4 h-4 text-amber-400 group-hover:rotate-12 transition-transform" />
-                <span>Explore with demo data (not your account)</span>
-              </button>
-
-              <div className="relative flex items-center justify-center mb-5">
-                <div className="border-t border-white/[0.08] w-full" />
-                <span className="bg-[#121219] px-3 text-[10px] uppercase font-bold text-slate-500 tracking-wider">
-                  Or sign in for real
-                </span>
-                <div className="border-t border-white/[0.08] w-full" />
-              </div>
-            </>
-          )}
+          {/* The demo entry was removed in 4.6.3: a real user must never be
+              shown fabricated servers. The app only ever renders a signed-in
+              account's own panel data, and the login screen when nobody is
+              signed in. */}
 
           {/* Panel-reachability notice: a browser preview has no native panel session */}
           {!realAuthAvailable && mode !== 'twofactor' && (
             <div className="mb-4 p-3 rounded-xl bg-slate-500/10 border border-slate-500/25 text-slate-300 text-xs flex items-start gap-2.5">
               <Info className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
               <span className="leading-relaxed">
-                Real sign-in needs the Victus Cloud Android app, which talks to the panel natively.
-                Demo data works everywhere.
+                Real sign-in needs the Victus Cloud Android app, which talks to the
+                panel natively. There is no sample or demo account.
               </span>
             </div>
           )}
@@ -274,7 +243,8 @@ export const LoginScreen: React.FC = () => {
             {mode === 'signin' && (
               <>
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  <label htmlFor="victus-signin-identifier"
+                    className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
                     Email or Username
                   </label>
                   <div className="relative flex items-center">
@@ -283,6 +253,7 @@ export const LoginScreen: React.FC = () => {
                       type="text"
                       autoCapitalize="none"
                       autoCorrect="off"
+                      id="victus-signin-identifier"
                       spellCheck={false}
                       required
                       value={email}
@@ -311,6 +282,7 @@ export const LoginScreen: React.FC = () => {
                   <div className="relative flex items-center">
                     <Lock className="w-4 h-4 text-slate-500 absolute left-3 pointer-events-none" />
                     <input
+                      id="victus-signin-password"
                       type={showPassword ? 'text' : 'password'}
                       required
                       value={password}

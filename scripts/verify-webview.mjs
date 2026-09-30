@@ -98,6 +98,102 @@ await page.addInitScript(() => {
       secondsRemaining: 21, millisUntilNext: 21456, periodSeconds: 30,
       synced: true, offsetMillis: 0,
     }),
+    // The auth half. Without these the app correctly concludes there is no
+    // panel session and stays on the login screen, which is the production
+    // behaviour — so they are stubbed here to reach the signed-in shell.
+    // Sign-in is driven through the app's own form, not by writing localStorage,
+    // so the panel round-trip is exercised too.
+    authSignIn: (user, _pass, cb) => {
+      window.__victusSignedIn = user;
+      window.__victusBridgeResolve(cb, {
+        ok: true, state: 'signed_in',
+        session: {
+          kind: 'api_key', userId: 'verify', username: user, email: user,
+          name: 'Verify', rootAdmin: false, twoFactorEnabled: false,
+          createdAt: 0, expiresAt: 0, keyMasked: '…aaaa',
+        },
+      });
+    },
+    authRestore: (cb) => {
+      if (!window.__victusSignedIn) {
+        window.__victusBridgeResolve(cb, { ok: false, state: 'error', message: 'signed out' });
+        return;
+      }
+      window.__victusBridgeResolve(cb, {
+        ok: true, state: 'signed_in',
+        session: {
+          kind: 'api_key', userId: 'verify', username: window.__victusSignedIn,
+          email: window.__victusSignedIn, name: 'Verify', rootAdmin: false,
+          twoFactorEnabled: false, createdAt: 0, expiresAt: 0, keyMasked: '…aaaa',
+        },
+      });
+    },
+    authSignOut: (_revoke, cb) => {
+      window.__victusSignedIn = null;
+      window.__victusBridgeResolve(cb, { ok: true, state: 'signed_out' });
+    },
+    // A real panel fleet. The sample fleet was removed in 4.6.3, so every check
+    // that used to read fabricated servers now reads the account's own.
+    apiGet: (path, cb) => {
+      if (path === '/api/client') {
+        window.__victusBridgeResolve(cb, {
+          ok: true, state: 'ok', status: 200,
+          body: JSON.stringify({ data: __victusFleet() }),
+        });
+        return;
+      }
+      window.__victusBridgeResolve(cb, {
+        ok: true, state: 'ok', status: 200,
+        body: JSON.stringify({ attributes: {
+          current_state: 'running',
+          resources: { cpu_absolute: 12.5, memory_bytes: 2147483648,
+                       disk_bytes: 10737418240, uptime: 11520000 },
+        } }),
+      });
+    },
+    apiPost: (_path, _body, cb) => window.__victusBridgeResolve(cb, {
+      ok: true, state: 'ok', status: 204, body: '',
+    }),
+  };
+  window.__victusFleet = () => ([
+    { object: 'server', attributes: {
+        identifier: '9a4b12c1', uuid: '9a4b12c1-3a1b-4cd3-84f9-71b8cd961001',
+        name: 'Survival SMP', node: 'SG-1', status: 'running',
+        is_suspended: false, is_installing: false,
+        limits: { memory: 8192, disk: 50000, cpu: 400 },
+        relationships: { allocations: { data: [
+          { attributes: { ip: '203.0.113.10', port: 25565, is_default: true } } ] } },
+      } },
+    { object: 'server', attributes: {
+        identifier: '7be2d410', uuid: '7be2d410-1111-4a2b-8c3d-222233334444',
+        name: 'Frankfurt KVM', node: 'Frankfurt-KVM', status: 'offline',
+        is_suspended: false, is_installing: false,
+        limits: { memory: 2048, disk: 20000, cpu: 200 },
+        relationships: { allocations: { data: [
+          { attributes: { ip: '198.51.100.5', port: 25566, is_default: true } } ] } },
+      } },
+    { object: 'server', attributes: {
+        identifier: 'c0ffee01', uuid: 'c0ffee01-5555-4c6d-9e8f-333344445555',
+        name: 'Discord Bot', node: 'SG-1', status: 'running',
+        is_suspended: false, is_installing: false,
+        limits: { memory: 1024, disk: 10000, cpu: 100 },
+        relationships: { allocations: { data: [
+          { attributes: { ip: '203.0.113.11', port: 25567, is_default: true } } ] } },
+      } },
+    { object: 'server', attributes: {
+        identifier: 'deadbeef', uuid: 'deadbeef-7777-4d8e-8f9a-444455556666',
+        name: 'Archive Node', node: 'Amsterdam-1', status: 'running',
+        is_suspended: false, is_installing: false,
+        limits: { memory: 512, disk: 5000, cpu: 50 },
+        relationships: { allocations: { data: [
+          { attributes: { ip: '198.51.100.9', port: 25570, is_default: true } } ] } },
+      } },
+  ]);
+  window.__victusBridgeResolve = (cb, payload) => {
+    const id = Number(cb);
+    setTimeout(() => {
+      window.__victusBridge && window.__victusBridge.resolve(id, JSON.stringify(payload));
+    }, 0);
   };
   window.open = (url) => {
     window.__victusOpenCalls.push(String(url));
@@ -153,7 +249,9 @@ const loginScreen = await page.evaluate(() => {
     offersApiKey: text.includes('Use an API key instead'),
     offersReset: text.includes('Forgot password?'),
     offersSignup: text.includes('Create one'),
-    labelsDemo: text.includes('Explore with demo data (not your account)'),
+    // Demo mode was removed in 4.6.3. The check is now the inverse: the
+    // sign-in screen must NOT offer fabricated data to a real user.
+    offersDemo: /Explore with demo data|demo data/i.test(text),
     explainsNoBridge: text.includes('Real sign-in needs the Victus Cloud Android app'),
     claimsEncryptedKey: text.includes('revocable API key'),
   };
@@ -163,8 +261,12 @@ check('sign-in screen asks the real panel for credentials',
   JSON.stringify(loginScreen));
 check('sign-in screen offers the API key, reset and sign-up paths',
   loginScreen.offersApiKey && loginScreen.offersReset && loginScreen.offersSignup);
-check('demo data is offered but labelled as not the account', loginScreen.labelsDemo);
-check('a browser build says real sign-in needs the app', loginScreen.explainsNoBridge);
+check('sign-in screen offers no demo/sample data at all', !loginScreen.offersDemo);
+// The "real sign-in needs the app" notice is only correct when there is no auth
+// bridge at all. This page HAS one (stubbed above), so its absence is the pass
+// condition; the genuine no-bridge case is covered on its own page further down.
+check('a bridged build does not claim sign-in is unavailable',
+  !loginScreen.explainsNoBridge, JSON.stringify({ explainsNoBridge: loginScreen.explainsNoBridge }));
 check('sign-in screen states where the credential lives', loginScreen.claimsEncryptedKey);
 
 // 2c. "Create one" leaves for the billing portal rather than faking a sign-up form.
@@ -177,23 +279,31 @@ check('account creation is handed to the billing portal',
 // the one call that click makes.
 await page.evaluate(() => { window.__victusOpenCalls = []; });
 
-// 3. Authenticate with the bundled demo account -> the real app shell must mount.
-await page.getByRole('button', { name: /Explore with demo data/ }).click();
+// 3. Sign in through the app's own form, against the stubbed panel. Demo
+// sign-in was removed in 4.6.3, so this exercises the only path that remains and
+// proves the real sign-in flow still reaches the signed-in shell.
+await page.locator('#victus-signin-identifier').fill('verify@victuscloud.com');
+await page.locator('#victus-signin-password').fill('a-real-password');
+await page.getByRole('button', { name: /^Sign in$/i }).click();
 await page.waitForSelector('.app-shell', { timeout: 20000 });
 await page.waitForSelector('text=Victus Cloud Ecosystem', { timeout: 20000 });
-check('authenticated shell mounts after demo sign-in', true);
+check('signing in against the panel mounts the app shell', true);
 
-// 3b. Demo data is labelled once inside the app, so it cannot pass for a real session.
-const demoBadge = await page.evaluate(() =>
-  [...document.querySelectorAll('span')].some((s) => s.textContent.trim() === 'Demo'));
-const demoCredential = await page.evaluate(() => {
+// 3b. No demo badge and no fabricated session may survive anywhere in the app.
+const noDemoAnywhere = await page.evaluate(() => {
+  const text = document.body.textContent || '';
   const stored = JSON.parse(localStorage.getItem('victus_auth_session') || '{}');
-  return { provider: stored.provider, accessToken: stored.access_token };
+  return {
+    badge: [...document.querySelectorAll('span')].some((s) => s.textContent.trim() === 'Demo'),
+    mentionsDemo: /\bdemo\b|sample fleet/i.test(text),
+    storedProvider: stored.provider,
+  };
 });
-check('demo session is marked as demo in the UI and in storage', demoBadge);
-check('demo session stores no token of any kind',
-  demoCredential.provider === 'demo' && demoCredential.accessToken === '',
-  JSON.stringify(demoCredential));
+check('no demo badge and no sample data inside the signed-in app',
+  !noDemoAnywhere.badge && !noDemoAnywhere.mentionsDemo,
+  JSON.stringify(noDemoAnywhere));
+check('a real panel session is what is stored',
+  noDemoAnywhere.storedProvider === 'victus', JSON.stringify(noDemoAnywhere));
 
 // 4. Node Infrastructure panel on the control dashboard.
 await page.getByRole('button', { name: 'Control Panel', exact: true }).click();
@@ -205,12 +315,30 @@ const nodes = await page.evaluate(() => {
   const rows = section ? [...section.querySelectorAll('h3')].map((h) => h.textContent.trim()) : [];
   return { rows, footer: section?.textContent.includes('Aggregated live from your') ?? false };
 });
-check('node infrastructure lists the real nodes from the fleet',
-  nodes.rows.length >= 4 && nodes.rows.includes('SG-1') && nodes.rows.includes('Frankfurt-KVM'),
+check('node infrastructure lists the nodes of the account\'s own servers',
+  nodes.rows.includes('SG-1') && nodes.rows.includes('Frankfurt-KVM')
+    && nodes.rows.includes('Amsterdam-1') && !nodes.rows.some((r) => r === 'Unknown'),
   `nodes=[${nodes.rows.join(',')}]`);
 check('node panel states its data source honestly', nodes.footer);
 
-// 4a. Demo mode must label the fleet as sample data rather than imply ownership.
+// 4c. The per-server control screen, driven by the account's OWN servers (the
+// sample fleet was removed in 4.6.3, so this now exercises the real path only).
+const noSample = await page.evaluate(() =>
+  !(document.body.textContent || '').includes('VictusMc Survival'));
+check('the sample fleet is nowhere in the signed-in app', noSample);
+
+await page.getByText('Survival SMP', { exact: true }).click();
+await page.waitForSelector('text=Back to Fleet Overview', { timeout: 20000 });
+// A power action goes to the panel, and the console reports what the panel
+// actually answered — the screen must never claim a restart that was refused.
+await page.getByRole('button', { name: /Restart/i }).click();
+await page.getByText('RESTART accepted (HTTP 204)').waitFor({ timeout: 20000 });
+check('per-server control screen sends a real power action to the panel', true);
+await page.getByRole('button', { name: 'Back to Fleet Overview', exact: true }).click();
+await page.waitForSelector('text=FLEET OVERVIEW', { timeout: 20000 });
+
+// 4a. There is no sample fleet to label any more (4.6.3). The control dashboard
+// must never show fabricated servers; with no panel reachable it says so instead.
 const sampleFleet = await page.evaluate(() => {
   const text = document.body.textContent || '';
   return {
@@ -218,8 +346,8 @@ const sampleFleet = await page.evaluate(() => {
     liveBanner: text.includes('Live from control.victuscloud.com'),
   };
 });
-check('demo mode labels the fleet as sample data',
-  sampleFleet.sampleBanner && !sampleFleet.liveBanner, JSON.stringify(sampleFleet));
+check('the app never falls back to a fabricated sample fleet',
+  !sampleFleet.sampleBanner, JSON.stringify(sampleFleet));
 
 // 4b. A NON-ADMIN must see nothing admin-related at all: no view-toggle, no
 // "Web View" button, no hint. The shell answers with an empty admin list for the
@@ -367,15 +495,14 @@ await page.getByRole('button', { name: /^Off/ }).click();
 await page.waitForFunction(() => !document.querySelector('.bgfx'), { timeout: 8000 });
 check('Off removes the backdrop from the DOM entirely', true);
 
-// 7. Per-server control screen still works end to end.
+// The Appearance sheet is still open over the app; its backdrop swallows every
+// pointer event, so the next real interaction has to close it first. The wait is
+// for the element to actually leave the DOM, not merely to stop being visible.
 await page.getByRole('button', { name: 'Done', exact: true }).click();
-await page.getByRole('button', { name: 'Home', exact: true }).click();
-await page.getByRole('button', { name: 'Control Panel', exact: true }).click();
-await page.getByText('VictusMc Survival', { exact: true }).click();
-await page.waitForSelector('text=Back to Fleet Overview', { timeout: 20000 });
-await page.getByRole('button', { name: /Restart/i }).click();
-await page.waitForSelector('text=Container victus-srv-9a4b12c1 rebooted cleanly.', { timeout: 20000 });
-check('per-server control screen + power action work', true);
+await page.getByText('BACKGROUND', { exact: true }).waitFor({ state: 'detached', timeout: 8000 });
+
+// 7. (The per-server screen is exercised in step 4c, while the fleet that was
+// just read from the panel is still on screen.)
 
 // 8. Leave the session in the stock look.
 await page.evaluate(() => {

@@ -11,14 +11,11 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   isLoading: boolean;
-  /** True for the labelled demo data, which never touches the panel. */
-  isDemo: boolean;
   /** True inside the Android app, where real panel sign-in is possible. */
   realAuthAvailable: boolean;
   signIn: (email: string, pass: string) => Promise<SignInOutcome>;
   verifyTwoFactor: (confirmationToken: string, code: string) => Promise<SignInOutcome>;
   signInWithApiKey: (apiKey: string) => Promise<SignInOutcome>;
-  signInDemo: () => Promise<SignInOutcome>;
   requestPasswordReset: (email: string) => Promise<{ message?: string; error: AuthError | null }>;
   signOut: (options?: { revokeKey?: boolean }) => Promise<void>;
 }
@@ -82,12 +79,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { error: res.error };
   };
 
-  const signInDemo = async (): Promise<SignInOutcome> => {
-    const res = await authService.signInDemo();
-    if (!res.error && res.session) setSession(res.session);
-    return { error: res.error };
-  };
-
   const signOut = async (options?: { revokeKey?: boolean }) => {
     await authService.signOut(options);
     setSession(null);
@@ -99,12 +90,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         session,
         isLoading: false,
-        isDemo: session?.provider === 'demo',
         realAuthAvailable: authService.isRealAuthAvailable(),
         signIn,
         verifyTwoFactor,
         signInWithApiKey,
-        signInDemo,
         requestPasswordReset: authService.requestPasswordReset,
         signOut,
       }}

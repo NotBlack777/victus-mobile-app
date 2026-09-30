@@ -39,7 +39,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   currentTitle = 'Victus Cloud',
 }) => {
   const { isDark, toggleColorMode } = useTheme();
-  const { user, signOut, isDemo } = useAuth();
+  const { user, signOut } = useAuth();
   const { unreadCount } = useNotifications();
 
   // A native-only affordance: in a browser there is no update service, so the
@@ -180,14 +180,6 @@ export const TopBar: React.FC<TopBarProps> = ({
           </button>
 
           {/* Dynamic Auth State: Authenticated Avatar with Online Presence */}
-          {/* Demo data is labelled wherever the account is shown, so sample data is
-              never mistaken for a real panel session. */}
-          {user && isDemo && (
-            <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide bg-amber-500/15 border border-amber-500/30 text-amber-300">
-              Demo
-            </span>
-          )}
-
           {user ? (
             <div className="flex items-center gap-1">
               <button

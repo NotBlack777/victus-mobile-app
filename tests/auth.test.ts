@@ -115,20 +115,32 @@ describe('authService in a browser (no native bridge)', () => {
     expect(bridgeCalls).toHaveLength(0);
   });
 
-  test('demo mode is available everywhere and is labelled as demo data', async () => {
-    const res = await authService.signInDemo();
-
-    expect(res.error).toBeNull();
-    expect(res.session?.provider).toBe('demo');
-    expect(res.session?.user.user_metadata.role).toBe('Demo data');
-    expect(res.session?.access_token).toBe('');
-    expect(getStoredSession()?.provider).toBe('demo');
+  // Demo mode was removed in 4.6.3. These tests exist so it cannot come back by
+  // accident: a real user must never be shown fabricated servers, and the only
+  // session the app can hold is a real panel session.
+  test('there is no way to sign in without the panel', async () => {
+    const authServiceAny = authService as unknown as Record<string, unknown>;
+    expect(authServiceAny.signInDemo).toBeUndefined();
   });
 
-  test('restore keeps a cached demo session but drops a cached panel session', async () => {
-    await authService.signInDemo();
-    expect((await authService.restore()).session?.provider).toBe('demo');
+  test('restore never invents a session when the panel is unreachable', async () => {
+    // No native bridge, and a stale demo-shaped session left in storage by an
+    // older build. It must be refused, not adopted.
+    storage.setItem(
+      AUTH_KEY,
+      JSON.stringify({
+        provider: 'demo',
+        access_token: '',
+        expires_at: 0,
+        user: { id: 'demo', email: 'demo@victuscloud.com' },
+      })
+    );
 
+    const restored = await authService.restore();
+    expect(restored.session).toBeNull();
+  });
+
+  test('restore drops a cached panel session it cannot re-validate', async () => {
     storage.setItem(
       AUTH_KEY,
       JSON.stringify({

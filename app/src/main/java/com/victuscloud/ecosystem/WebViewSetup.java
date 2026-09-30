@@ -1,5 +1,6 @@
 package com.victuscloud.ecosystem;
 
+import android.os.Build;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 
@@ -49,6 +50,11 @@ final class WebViewSetup {
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
 
+        // The engine's own colour scheme, for the parts CSS does not paint:
+        // form controls, scrollbars, the caret and the soft keyboard. Applied
+        // again on every theme change; this is the launch-time default.
+        applyColorScheme(webView, ThemeManager.isDark(webView.getContext()));
+
         String defaultUa = s.getUserAgentString();
         if (defaultUa != null && defaultUa.contains("; wv")) {
             s.setUserAgentString(defaultUa.replace("; wv", ""));
@@ -71,6 +77,36 @@ final class WebViewSetup {
         } catch (Throwable unsupported) {
             // UnsupportedOperationException on older providers; nothing else
             // here is worth a crash either. The page simply renders un-darkened.
+        }
+    }
+
+    /**
+     * Tells the WebView engine which colour scheme the page is currently using.
+     *
+     * <p>This is the half of the theme switch that lives outside CSS. The web app
+     * repaints itself from its own tokens, but the engine also decides the colour
+     * of form controls, scrollbars, the caret and the soft keyboard — so without
+     * it a light app could still raise a dark keyboard and vice versa.</p>
+     *
+     * <p>Algorithmic darkening / {@code FORCE_DARK} is deliberately <em>not</em>
+     * used to achieve this. Force-dark inverts third-party pages behind the app's
+     * back, which is not what the user's Appearance choice means; the engine is
+     * asked to leave the page's own colours alone and simply report the right
+     * scheme for its own widgets.</p>
+     */
+    static void applyColorScheme(WebView webView, boolean dark) {
+        if (webView == null || Build.VERSION.SDK_INT < 26) return;
+        try {
+            // Never let the engine invert a page that already styles itself.
+            webView.setForceDarkAllowed(false);
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+                // OFF, not ON: the app paints itself. We only want the scheme.
+                WebSettingsCompat.setAlgorithmicDarkeningAllowed(
+                        webView.getSettings(), false);
+            }
+        } catch (Throwable unsupported) {
+            // A provider that cannot service the hint must not take the app down
+            // over a colour; the CSS tokens still paint the page correctly.
         }
     }
 }

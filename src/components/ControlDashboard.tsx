@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import {
   VictusService,
-  REAL_VICTUS_SERVICES,
   getFleetStats,
   getNodeSummaries,
   formatMiB,
@@ -40,7 +39,7 @@ interface ControlDashboardProps {
 type FilterTab = 'all' | 'game' | 'vps';
 
 export const ControlDashboard: React.FC<ControlDashboardProps> = ({
-  services = REAL_VICTUS_SERVICES,
+  services = [],
   onSelectService,
   onNavigateTab,
   isLive = false,
@@ -108,13 +107,7 @@ export const ControlDashboard: React.FC<ControlDashboardProps> = ({
               </button>
             )}
           </div>
-        ) : (
-          <div className="mt-3 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/25">
-            <span className="text-[11px] font-semibold text-amber-200">
-              Sample fleet — sign in to see and control your own servers.
-            </span>
-          </div>
-        )}
+        ) : null}
 
         {liveError && (
           <div className="mt-2 px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/25 text-[11px] text-rose-200">

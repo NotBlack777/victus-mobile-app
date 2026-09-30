@@ -52,7 +52,7 @@ export interface User {
 }
 
 /** How the session was obtained. `demo` marks locally-fabricated demo data. */
-export type AuthProviderKind = 'victus' | 'demo';
+export type AuthProviderKind = 'victus';
 
 export interface Session {
   /**
@@ -101,8 +101,18 @@ export type AuthStateChangeCallback = (
 
 const AUTH_STORAGE_KEY = 'victus_auth_session';
 
-/** Where Victus Cloud accounts are actually created: the panel has no sign-up. */
-export const ACCOUNT_SIGNUP_URL = 'https://billing.victuscloud.com';
+/**
+ * Where Victus Cloud accounts are actually created.
+ *
+ * <p>The control panel has registration disabled — {@code POST /auth/register}
+ * answers 405 — so sign-up lives on the billing site instead. It is the
+ * <em>form</em> at {@code /register}, not the billing area's front page: the old
+ * value was the bare origin, which is why "Create Account" dropped the user on
+ * the Control/billing dashboard instead of a sign-up form. Verified against the
+ * live site: {@code /register} answers 200 and the billing page's own "Register"
+ * link points at exactly this path.</p>
+ */
+export const ACCOUNT_SIGNUP_URL = 'https://billing.victuscloud.com/register';
 
 /** The panel's own API-credentials screen, for creating a key by hand. */
 export const API_CREDENTIALS_URL = 'https://control.victuscloud.com/account/api';
@@ -213,33 +223,6 @@ function buildSessionFromNative(native: NativeSession): Session {
   };
 }
 
-/**
- * The labelled demo session. Only reachable through `signInDemo()`, and always
- * marked `provider: 'demo'` so the UI can say so.
- */
-function buildDemoSession(email: string, name?: string): Session {
-  const cleanEmail = email.trim().toLowerCase();
-  const now = Date.now();
-  const expiresIn = 3600 * 24 * 7;
-
-  return {
-    access_token: '',
-    token_type: 'demo',
-    expires_in: expiresIn,
-    expires_at: now + expiresIn * 1000,
-    provider: 'demo',
-    user: {
-      id: `demo_${now.toString(36)}`,
-      email: cleanEmail,
-      user_metadata: {
-        name: name?.trim() || cleanEmail.split('@')[0],
-        avatar_url: avatarFor(cleanEmail),
-        role: 'Demo data',
-      },
-      created_at: new Date().toISOString(),
-    },
-  };
-}
 
 /** Live server count from the panel, plus whether the session was rejected. */
 async function fetchServerCount(): Promise<{ count: number | null; unauthorized: boolean }> {
@@ -385,12 +368,6 @@ export const authService = {
    * Enters the labelled demo experience: the sample data the app ships with,
    * with no panel connection at all.
    */
-  async signInDemo(email = 'demo@victuscloud.com', name?: string): Promise<AuthResult> {
-    const session = buildDemoSession(email, name);
-    broadcastSession(session);
-    return { user: session.user, session, error: null };
-  },
-
   /**
    * Sign out. Revokes the API key the app minted (so "Sign out" does not leave a
    * live credential on the panel) and clears every local trace of the session.
@@ -411,13 +388,14 @@ export const authService = {
 
   /**
    * Re-validates the stored session against the panel. Called once on start-up:
-   * a stored demo session is kept as-is, while a real one is only kept if the
-   * panel still accepts its credential.
+   * a session only survives if the panel still accepts its credential.
    */
   async restore(): Promise<{ session: Session | null; error: AuthError | null }> {
     if (!isNativeAuthAvailable()) {
-      const cached = getStoredSession();
-      return { session: cached?.provider === 'demo' ? cached : null, error: null };
+      // No native panel session to validate against. Demo sessions no longer
+      // exist (removed in 4.6.3), so a browser preview has nothing to restore
+      // and the login screen is the honest answer.
+      return { session: null, error: null };
     }
 
     const result = await nativeRestore();

@@ -355,6 +355,28 @@ export function shellClearSession(): void {
   window.VictusNative?.shellClearSession?.();
 }
 
+/**
+ * Tells the shell a custom drag is in progress, so pull-to-refresh stands down
+ * for the duration. Without it, dragging the chat bubble is claimed by the
+ * pull-to-refresh wrapper: the bubble will not move and the page tries to
+ * refresh instead.
+ */
+export function shellSetDragging(dragging: boolean): void {
+  window.VictusNative?.shellSetDragging?.(dragging);
+}
+
+/**
+ * Applies a colour-mode change made in the web app to the native layer.
+ *
+ * <p>Without this the web app flips and the shell snaps it straight back: the
+ * native Appearance sheet is the persisted source of truth, and the next theme
+ * injection re-asserts whatever the sheet says. The web header's light/dark
+ * button therefore looked like it did nothing.
+ */
+export function shellSetColorMode(mode: 'dark' | 'light' | 'system'): void {
+  window.VictusNative?.shellSetColorMode?.(mode);
+}
+
 /** Hands the page currently on screen to the device browser. */
 export function shellOpenExternal(): void {
   window.VictusNative?.shellOpenExternal?.();
