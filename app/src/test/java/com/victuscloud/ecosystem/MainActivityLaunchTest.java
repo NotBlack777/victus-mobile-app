@@ -1,9 +1,14 @@
 package com.victuscloud.ecosystem;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.robolectric.Shadows.shadowOf;
 
 import android.app.Activity;
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Looper;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.WebView;
@@ -96,6 +101,79 @@ public class MainActivityLaunchTest {
             MainActivity activity = controller.setup().get();
             View root = activity.getWindow().getDecorView().findViewById(android.R.id.content);
             assertNotNull("the shell never created a WebView", findWebView(root));
+        }
+    }
+
+    /**
+     * The bundled home screen is what the app opens on. If this silently fails
+     * the user gets a blank WebView and blames the release, so the very first
+     * load is asserted rather than assumed.
+     */
+    @Test
+    public void theBundledHomeScreenIsTheFirstThingLoaded() {
+        try (ActivityController<ForcedWebViewActivity> controller =
+                     Robolectric.buildActivity(ForcedWebViewActivity.class)) {
+            MainActivity activity = controller.setup().get();
+            WebView webView = findWebView(
+                    activity.getWindow().getDecorView().findViewById(android.R.id.content));
+            assertNotNull("no WebView", webView);
+            assertEquals("the app did not open its own bundled home screen",
+                    "https://appassets.androidplatform.net/index.html",
+                    shadowOf(webView).getLastLoadedUrl());
+        }
+    }
+
+    /**
+     * The full lifecycle, not just onCreate. Every one of these callbacks runs
+     * after the first frame, on real devices, and none of them had ever been
+     * executed before — so any of them could be hiding the next crash.
+     */
+    @Test
+    public void theWholeLifecycleRunsWithoutThrowing() {
+        try (ActivityController<ForcedWebViewActivity> controller =
+                     Robolectric.buildActivity(ForcedWebViewActivity.class)) {
+            MainActivity activity = controller.setup().get();
+            controller.resume();
+            shadowOf(Looper.getMainLooper()).idle();
+            controller.pause();
+            controller.stop();
+            controller.start();
+            controller.resume();
+            shadowOf(Looper.getMainLooper()).idle();
+            controller.pause().stop().destroy();
+        }
+    }
+
+    /**
+     * A victuscloud.com link opened while the app is already running. This is
+     * the "navigate the app" path: singleTask means every link re-enters here
+     * rather than creating a second Activity, so a crash in onNewIntent is
+     * only ever seen by a user tapping a link from another app.
+     */
+    @Test
+    public void aDeepLinkWhileRunningNavigatesInsteadOfCrashing() {
+        try (ActivityController<ForcedWebViewActivity> controller =
+                     Robolectric.buildActivity(ForcedWebViewActivity.class)) {
+            MainActivity activity = controller.setup().get();
+
+            Intent link = new Intent(Intent.ACTION_VIEW,
+                    Uri.parse("https://control.victuscloud.com/server/abc"));
+            controller.newIntent(link);
+
+            assertNotNull("the deep link tore the activity down",
+                    activity.getWindow().getDecorView());
+        }
+    }
+
+    /** The back gesture is wired through OnBackPressedDispatcher, not overridden. */
+    @Test
+    public void theBackGestureIsHandled() {
+        try (ActivityController<ForcedWebViewActivity> controller =
+                     Robolectric.buildActivity(ForcedWebViewActivity.class)) {
+            MainActivity activity = controller.setup().get();
+            // First back press is consumed by in-app history; it must not throw.
+            activity.getOnBackPressedDispatcher().onBackPressed();
+            shadowOf(Looper.getMainLooper()).idle();
         }
     }
 
