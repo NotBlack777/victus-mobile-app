@@ -70,7 +70,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   };
 
   return (
-    <header className="app-chrome pt-safe w-full select-none">
+    <header className="app-chrome app-chrome-top pt-safe w-full select-none">
       {/* Top bar surface matching control.victuscloud.com header */}
       <div
         className="w-full flex items-center justify-between px-2.5 sm:px-4 py-2 border-b backdrop-blur-md transition-colors duration-200"

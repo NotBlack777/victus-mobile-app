@@ -112,7 +112,7 @@ const AUTH_STORAGE_KEY = 'victus_auth_session';
  * live site: {@code /register} answers 200 and the billing page's own "Register"
  * link points at exactly this path.</p>
  */
-export const ACCOUNT_SIGNUP_URL = 'https://billing.victuscloud.com/register';
+export const ACCOUNT_SIGNUP_URL = 'https://victuscloud.com/signup';
 
 /** The panel's own API-credentials screen, for creating a key by hand. */
 export const API_CREDENTIALS_URL = 'https://control.victuscloud.com/account/api';

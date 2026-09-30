@@ -377,6 +377,22 @@ export function shellSetColorMode(mode: 'dark' | 'light' | 'system'): void {
   window.VictusNative?.shellSetColorMode?.(mode);
 }
 
+/**
+ * The installed binary's own version name, read from BuildConfig.
+ *
+ * <p>Deliberately the native value rather than a constant compiled into the
+ * bundle: if the bundle and the APK ever disagree, this shows which one is
+ * actually running, which is the first thing worth knowing when a fix "does
+ * nothing" on a phone.</p>
+ */
+export function appVersion(): string {
+  try {
+    return window.VictusNative?.appVersion?.() || '';
+  } catch {
+    return '';
+  }
+}
+
 /** Hands the page currently on screen to the device browser. */
 export function shellOpenExternal(): void {
   window.VictusNative?.shellOpenExternal?.();

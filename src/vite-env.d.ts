@@ -49,6 +49,8 @@ interface VictusNativeBridge {
 
   /** JSON snapshot: update availability, current URL, back/refresh state, admin areas. */
   shellUiState?: () => string;
+  /** The installed binary's versionName, so the UI can name the running build. */
+  appVersion?: () => string;
   /** The system back button's behaviour: WebView history, then Home, then exit. */
   shellBack?: () => void;
   /** Reloads the page currently in the WebView (the web header's refresh). */

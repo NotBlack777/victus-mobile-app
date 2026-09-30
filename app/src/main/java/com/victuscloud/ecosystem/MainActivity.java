@@ -1709,6 +1709,20 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
             return activity.shellUiStateJson();
         }
 
+        /**
+         * The installed binary's own version name, read from its package.
+         *
+         * <p>Shown in the account sheet so "the fix isn't working" can be told
+         * apart from "the old APK is still installed": the two look identical
+         * from the outside, and guessing wrong wastes a whole release cycle.
+         * Read from the installed package, which is by definition the binary
+         * that is running.</p>
+         */
+        @JavascriptInterface
+        public String appVersion() {
+            return DeviceCompat.appVersion(activity);
+        }
+
         /** System back: walks WebView history like the gesture does. */
         @JavascriptInterface
         public void shellBack() {

@@ -37,7 +37,7 @@ export const DockBar: React.FC<DockBarProps> = ({ activeTabId, onSelectTab }) =>
 
   return (
     <nav
-      className="app-chrome pb-safe w-full border-t backdrop-blur-md select-none transition-colors duration-200"
+      className="app-chrome app-chrome-bottom pb-safe w-full border-t backdrop-blur-md select-none transition-colors duration-200"
       style={{
         backgroundColor: 'var(--surface-topbar)',
         borderColor: 'var(--divider)',

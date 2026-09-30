@@ -1,7 +1,20 @@
 import './dom-shim.ts';
 import { beforeEach, describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { resetStorage } from './dom-shim.ts';
 import { shellSetColorMode, shellSetDragging } from '../src/services/victusBridge.ts';
+
+const CSS = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
+
+/** The rule block for one selector, with its comments stripped. */
+function rule(selector: string): string {
+  const start = CSS.indexOf(selector + ' {');
+  if (start < 0) throw new Error('no such rule: ' + selector);
+  const body = CSS.slice(start, CSS.indexOf('}', start));
+  // Comments explain the very values under test; asserting against prose would
+  // make this test fail on its own documentation.
+  return body.replace(/\/\*[\s\S]*?\*\//g, '');
+}
 
 /**
  * Regressions from the 4.6.3 task list, on the web half.
@@ -19,6 +32,38 @@ const w = window as MutableWindow;
 beforeEach(() => {
   resetStorage();
   delete w.VictusNative;
+});
+
+describe('the page can actually scroll', () => {
+  // The reported symptom was "I cannot scroll up or down on ANY page, and
+  // pull-to-refresh keeps coming up". The cause was pure CSS and lived in the
+  // stylesheet, which is why fixing only the native pull-to-refresh layout
+  // changed nothing: the document was never taller than the viewport, so the
+  // WebView truthfully reported "cannot scroll up" and every drag was a pull.
+  test('the shell grows with its content instead of being a fixed-height box', () => {
+    const shell = rule('.app-shell');
+    // A fixed viewport height caps the document at the viewport.
+    expect(shell).not.toMatch(/(^|\s)height:\s*100d?vh/);
+    expect(shell).toMatch(/min-height:\s*100d?vh/);
+  });
+
+  test('nothing clips the content away from the scroller', () => {
+    // `overflow: hidden` on the shell or the content box swallows the overflow
+    // instead of letting it reach the document, which is what made every page
+    // unscrollable.
+    expect(rule('.app-shell')).not.toMatch(/overflow:\s*hidden/);
+    expect(rule('.app-content')).not.toMatch(/overflow:\s*hidden/);
+    expect(rule('.app-content')).not.toMatch(/flex:\s*1 1 0\b/);
+  });
+
+  test('the chrome sticks instead of being taken out of flow', () => {
+    // Sticky, not fixed: fixed would need the document to scroll anyway, but it
+    // also took the bars out of flow, which is what let content hide under
+    // them once the shell stopped clipping.
+    expect(rule('.app-chrome')).toMatch(/position:\s*sticky/);
+    expect(rule('.app-chrome-top')).toMatch(/top:\s*0/);
+    expect(rule('.app-chrome-bottom')).toMatch(/bottom:\s*0/);
+  });
 });
 
 describe('the chat bubble drag/tap contract', () => {
@@ -122,13 +167,12 @@ describe('the chat-bubble drag notification', () => {
 });
 
 describe('account creation routes to the real sign-up form', () => {
-  test('the sign-up URL is the register form, not the billing front page', async () => {
+  test('the sign-up URL is the real sign-up form', async () => {
     const { ACCOUNT_SIGNUP_URL } = await import('../src/services/authService.ts');
-    // The old value was the bare billing origin, so "Create Account" dropped the
-    // user on the Control/billing dashboard instead of a sign-up form. Verified
-    // against the live site: /register answers 200 and the billing page's own
-    // Register link points at exactly this path.
-    expect(ACCOUNT_SIGNUP_URL).toBe('https://billing.victuscloud.com/register');
+    // "Create Account" used to land on a billing/Control dashboard. The site's
+    // own sign-up form is at victuscloud.com/signup (answers 200), so that is
+    // the one destination.
+    expect(ACCOUNT_SIGNUP_URL).toBe('https://victuscloud.com/signup');
   });
 
   test('the sign-up URL is https on a .com host', async () => {

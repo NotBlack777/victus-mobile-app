@@ -1,5 +1,52 @@
 # Changelog
 
+## Victus Cloud 4.6.4 (the real cause of "nothing scrolls")
+
+`versionCode 52` / `versionName 4.6.4`. **Install this over 4.6.3.**
+
+4.6.3 fixed pull-to-refresh but not the reason nothing scrolled, because the
+reason was not in the native layer at all.
+
+### Fixed
+
+**Scrolling — the actual cause.** `.app-shell` was a fixed-height
+(`100dvh`), `overflow: hidden` box and `.app-content` clipped too, so the
+document was never taller than the viewport. The WebView was therefore *correct*
+to report "cannot scroll up" on every gesture, and the native layer faithfully
+turned each of them into a pull-to-refresh. The document is now what scrolls:
+the shell grows with its content and the header and channel bar are `sticky`
+rather than fixed. Covered by four new tests that read the stylesheet, because
+this bug lived in the stylesheet.
+
+**The chat bubble could still be dragged off the screen.** It was
+`position: absolute` inside the shell — a box that is now as tall as the whole
+document — so it was measured and placed against something far larger than the
+viewport. It is now `position: fixed` and clamped to the viewport.
+
+**Create Account** now opens `https://victuscloud.com/signup`, the site's real
+sign-up form (verified 200), rather than a billing page.
+
+**A build stamp in the account sheet.** "The fix doesn't work" and "the old APK
+is still installed" look identical from the outside. The account sheet now shows
+the installed binary's own `versionName`, read from `BuildConfig`, so the running
+build is never a guess again.
+
+### Investigated, and why the fix was not obvious
+
+`control.victuscloud.com` is a **Laravel** panel. Its login POST requires a
+`GET /sanctum/csrf-cookie` first and the resulting `XSRF-TOKEN` cookie echoed as
+a header; without it the POST does not reach the login handler at all and comes
+back as the site's HTML. The app already performs exactly that handshake, and
+sends the field name the panel's own JavaScript sends (`user`), so the request
+the app makes matches the one the site makes. The panel's login form also carries
+a reCAPTCHA token.
+
+Admin pages never appearing is a consequence of this, not a separate bug: the
+admin view-toggle only appears once a sign-in has succeeded and the panel has
+confirmed the role.
+
+Custom recovery email, Google sign-in and passkeys remain as recorded in 4.6.3.
+
 ## Victus Cloud 4.6.3 (scrolling, the chat bubble, the theme toggle, and the demo account gone)
 
 `versionCode 51` / `versionName 4.6.3`. **Install this over 4.6.2.**

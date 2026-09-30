@@ -269,11 +269,12 @@ check('a bridged build does not claim sign-in is unavailable',
   !loginScreen.explainsNoBridge, JSON.stringify({ explainsNoBridge: loginScreen.explainsNoBridge }));
 check('sign-in screen states where the credential lives', loginScreen.claimsEncryptedKey);
 
-// 2c. "Create one" leaves for the billing portal rather than faking a sign-up form.
+// 2c. "Create one" leaves for the site's real sign-up form rather than faking
+// one or dropping the user on a dashboard.
 await page.getByRole('button', { name: 'Create one' }).click();
 const signupTargets = await page.evaluate(() => window.__victusOpenCalls);
-check('account creation is handed to the billing portal',
-  signupTargets.length === 1 && signupTargets[0].includes('billing.victuscloud.com'),
+check('account creation is handed to the real sign-up form',
+  signupTargets.length === 1 && signupTargets[0] === 'https://victuscloud.com/signup',
   signupTargets.join(','));
 // Reset the log so the later "no bridge → browser tab" check still counts exactly
 // the one call that click makes.

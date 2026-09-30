@@ -23,12 +23,16 @@ const DOCK_BAR_HEIGHT = 68;
  */
 const TAP_DRAG_THRESHOLD_PX = 10;
 
-// Clamp within the app frame (the nearest positioned ancestor), not the window,
-// so the bubble never escapes the phone shell on desktop.
+// Clamp against the *viewport*, not the document or the shell box.
+//
+// The shell is position:relative and now grows with the page, so an
+// absolutely-positioned bubble was measured against a box as tall as the
+// whole document: it could be dragged far below the screen and scrolled away
+// for good. The bubble is position:fixed, so the viewport is both its
+// containing block and the only frame that is always on screen.
 function clampToFrame(x: number, y: number): { x: number; y: number } {
-  const frame = document.querySelector('.app-shell');
-  const w = frame ? frame.clientWidth : window.innerWidth;
-  const h = frame ? frame.clientHeight : window.innerHeight;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
   const minX = MARGIN;
   const maxX = Math.max(MARGIN, w - BUBBLE_SIZE - MARGIN);
   // The top bound used to be TOP_BAR_HEIGHT + 8, which pinned the bubble below
@@ -269,7 +273,7 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ onNaviga
           // browser claims the gesture for scrolling the page underneath.
           touchAction: 'none',
         }}
-        className={`absolute top-0 left-0 z-overlay w-[54px] h-[54px] rounded-full bg-white text-slate-900 shadow-[0_8px_28px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.2)] flex items-center justify-center cursor-grab active:cursor-grabbing transition-transform duration-75 select-none ${
+        className={`fixed top-0 left-0 z-overlay w-[54px] h-[54px] rounded-full bg-white text-slate-900 shadow-[0_8px_28px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.2)] flex items-center justify-center cursor-grab active:cursor-grabbing transition-transform duration-75 select-none ${
           isDragging ? 'scale-105 opacity-90 shadow-2xl' : 'hover:scale-105'
         }`}
       >

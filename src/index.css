@@ -217,12 +217,19 @@ body::before {
 .app-shell {
   position: relative;
   width: 100vw;
-  height: 100vh;
-  height: 100dvh; /* mobile browsers: excludes URL bar */
-  overflow: hidden;
+  /* The document — not an inner box — must be the thing that scrolls.
+     A fixed-height, overflow:hidden shell makes the page exactly viewport
+     tall, so the WebView honestly reports "cannot scroll up", every drag
+     looks like a pull-to-refresh, and nothing on any page ever moves. The
+     shell therefore grows with its content; the chrome is sticky instead
+     of fixed, so it stays put while the content flows underneath it. */
+  min-height: 100vh;
+  min-height: 100dvh; /* mobile browsers: excludes URL bar */
+  overflow-x: hidden;
+  overflow-y: visible;
   display: flex;
   flex-direction: column;
-  touch-action: manipulation;
+  touch-action: pan-y;
 }
 
 /* Desktop: render the app in a phone-sized frame */
@@ -253,13 +260,25 @@ body::before {
 
 /* Only the scrollable content between the top bar and dock scrolls */
 .app-content {
-  flex: 1 1 0;
+  flex: 1 1 auto;
   min-height: 0;
   position: relative;
   z-index: 10;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
+}
+
+/* Chrome floats over the scrolling document rather than owning it. */
+.app-chrome {
+  position: sticky;
+  z-index: 20;
+}
+.app-chrome-top {
+  top: 0;
+}
+.app-chrome-bottom {
+  bottom: 0;
 }
 
 /* Layers inside the shell: chrome < overlays < modals */

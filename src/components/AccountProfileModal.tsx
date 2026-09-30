@@ -18,6 +18,7 @@ import { useAuth } from '../context/AuthContext.tsx';
 import { useToast } from './Toast.tsx';
 import { useTheme } from '../context/ThemeContext.tsx';
 import { openVictusLink } from '../utils/navigation.ts';
+import { appVersion as nativeAppVersion } from '../services/victusBridge.ts';
 
 // Convert ms remaining until expiry into a human label
 function formatDuration(ms: number): string {
@@ -82,6 +83,7 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({
   };
 
   const displayName = user.user_metadata?.name || user.email.split('@')[0];
+  const appVersion = nativeAppVersion();
   // The role comes from the panel's admin flag, not from a substring of the email.
   const role = user.user_metadata?.role || 'Cloud Member';
   const avatarUrl = user.user_metadata?.avatar_url;
@@ -233,6 +235,20 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({
                 </div>
               </div>
             )}
+
+            {/* Build stamp. A support conversation about "the fix didn't work"
+                is unanswerable without knowing which APK is actually running —
+                an old install looks exactly like a broken new one. This is
+                read from the native BuildConfig, so it always matches the
+                installed binary rather than whatever the bundle was built from. */}
+            <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.05] flex items-center justify-between text-[11px]">
+              <div className="flex items-center gap-2 text-slate-400">
+                <span>App version</span>
+              </div>
+              <span className="font-mono font-medium text-slate-300">
+                {appVersion ? `v${appVersion}` : '—'}
+              </span>
+            </div>
 
             {/* Token Lifetime */}
             <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.05] flex items-center justify-between text-[11px]">
