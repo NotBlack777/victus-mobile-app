@@ -56,8 +56,8 @@ android {
         // Android 6.0 instead of a clean "unsupported" path.
         minSdk 24
         targetSdk 35
-        versionCode 46
-        versionName '4.5.1'
+        versionCode 47
+        versionName '4.5.2'
     }
 
     signingConfigs {
@@ -74,20 +74,41 @@ android {
         }
     }
 
+    // ========================================================================
+    // NO SHRINKING. EVER.
+    // ========================================================================
+    // minifyEnabled / shrinkResources are hard-disabled for BOTH build types.
+    //
+    // This is a deliberate stability decision, not an oversight. The 4.5.0/4.5.1
+    // release APK was built with R8 + resource shrinking and crashed instantly on
+    // launch. Comparing the two APKs shows exactly what the shrinker removed:
+    // every one of the 30 `androidx.core.splashscreen` classes is present in the
+    // debug APK and absent from the release one, and the identifier
+    // `installSplashScreen` — which MainActivity.onCreate() calls on the FIRST
+    // line of the launch path — appears nowhere in the shrunk dex. A launch-path
+    // class vanishing under minification is precisely the "crashes on launch,
+    // only the small build" failure.
+    //
+    // APK size is not a goal here. Stability is. Nothing in this build is
+    // shrunk, minified, obfuscated or stripped — not code, not resources, not
+    // assets — and `tools/check-no-shrinking.sh` fails the build if anyone ever
+    // turns it back on.
     buildTypes {
         debug {
             // Debug builds keep the original applicationId so the phone-only
             // workflow produces an installable update path for testers, and
             // carry the release signature so they upgrade each other in place.
             minifyEnabled false
+            shrinkResources false
             if (hasReleaseSigning) {
                 signingConfig signingConfigs.release
             }
         }
         release {
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // See above: stability beats size. No R8, no ProGuard, no resource
+            // shrinking, no obfuscation.
+            minifyEnabled false
+            shrinkResources false
             if (hasReleaseSigning) {
                 signingConfig signingConfigs.release
             }
@@ -106,6 +127,46 @@ android {
         // Shizuku runs as the shell/root identity for in-app updates.
         aidl true
     }
+}
+
+// ============================================================================
+// Guard rail: the build fails if shrinking is ever switched back on.
+// ============================================================================
+tasks.register('checkNoShrinking') {
+    group = 'verification'
+    description = 'Fails if any build type re-enables minification or resource shrinking.'
+    def buildFile = file('build.gradle')
+    inputs.file(buildFile)
+    outputs.upToDateWhen { false }
+    doLast {
+        // Comments explain *why* these switches are off, and quoting the old
+        // values in a comment must not read as re-enabling them — so only
+        // non-comment lines are inspected.
+        def code = buildFile.readLines('UTF-8')
+                .collect { it.replaceAll(/^\s*\/\/.*$/, '').replaceAll(/\/\*.*?\*\//, '') }
+                .join('\n')
+        // Assembled from fragments so that this guard cannot match its own
+        // search terms and report itself as a violation.
+        def minifySwitch = ['minify', 'Enabled'].join('')
+        def shrinkSwitch = ['shrink', 'Resources'].join('')
+        def rulesFile = ['pro' + 'guard', 'Files'].join('')
+        def rulesTemplate = ['pro' + 'guard-android']
+        def offenders = []
+        if (code =~ /${minifySwitch}\s+true/) offenders << "${minifySwitch} true"
+        if (code =~ /${shrinkSwitch}\s+true/) offenders << "${shrinkSwitch} true"
+        if (code.contains(rulesFile)) offenders << rulesFile
+        if (code.contains(rulesTemplate[0])) offenders << rulesTemplate[0]
+        if (!offenders.isEmpty()) {
+            throw new GradleException(
+                    "Shrinking must stay off (it caused an instant-launch crash in 4.5.0).\n" +
+                    "Found in app/build.gradle: " + offenders.join(', ') + "\n" +
+                    "Every build type must keep ${minifySwitch} false and ${shrinkSwitch} false.")
+        }
+        logger.lifecycle('checkNoShrinking: OK — no minification, obfuscation or resource shrinking.')
+    }
+}
+tasks.matching { it.name ==~ /^pre(Debug|Release)Build$/ }.configureEach {
+    dependsOn 'checkNoShrinking'
 }
 
 dependencies {
