@@ -1,5 +1,82 @@
 # Changelog
 
+## Victus Cloud 4.6.1 (the real instant-launch crash, found and fixed)
+
+`versionCode 49` / `versionName 4.6.1`. **Install this over 4.6.0.**
+
+### The actual cause of the instant crash
+
+4.5.2 was wrong. Turning shrinking off was necessary — the shrinker really had
+removed all 30 `androidx.core.splashscreen` classes and the
+`installSplashScreen` call on the first line of launch — but it was **not** what
+was crashing the app, which is why 4.5.2, 4.6.0 and every release before them
+all still died on launch.
+
+The real cause is in `MainActivity.createLayout()`:
+
+```java
+rootView.addView(webView, ...);        // webView's parent is now rootView
+...
+pullRefresh.addView(webView, ...);     // IllegalStateException
+```
+
+`ViewGroup.addView` throws the moment a child already has a *different* parent:
+
+> `java.lang.IllegalStateException: The specified child already has a parent.
+> You must call removeView() on the child's parent first.`
+
+This is unconditional — no device, no build type, no configuration avoids it.
+It runs inside `createLayout()`, which `onCreate()` calls before anything is
+configured, so the process died **before the first frame was drawn**. It has been
+present since the pull-to-refresh port in `10871c9` ("port reference Tools menu
+and Appearance settings, release 2.2.1") and has killed the app ever since.
+
+The fix is to add the WebView to the pull wrapper first and never to the root, so
+it is never re-parented.
+
+### Why nobody caught it
+
+Every test in this project targets a pure helper class. Nothing ever executed
+`MainActivity.onCreate()`, so the launch path was entirely unverified — which is
+also why the earlier "the shrinker removed the splash classes" diagnosis was so
+confident and so wrong. The class-diff evidence was real; the causal leap from
+"these classes are missing" to "this is why it crashes" was not.
+
+`MainActivityLaunchTest` now boots the Activity under Robolectric and runs the
+real `onCreate()` — splash handoff, `createLayout()`, `configureWebView()`, the
+WebView load. Verified by reverting the fix and watching it fail with the exact
+exception above.
+
+Robolectric ships no WebView provider, so the test drives a small subclass that
+overrides one new `protected isWebViewUsable()` seam. Without it the test would
+stop at the app's "no WebView" screen and never reach the code that crashes.
+
+### A second crash, on real devices
+
+The new test immediately surfaced another one on the launch path:
+`WebSettingsCompat.setAlgorithmicDarkeningAllowed()` raises
+`UnsupportedOperationException` when the WebView provider advertises
+`ALGORITHMIC_DARKENING` but cannot service the call — real on some custom-ROM
+WebViews and during provider updates. That is a cosmetic colour preference, and
+it is now guarded so it can never take the app down on the first frame.
+
+### About the APK size
+
+The release APK is ~2.65 MB and the debug APK ~4.19 MB. **Nothing is missing.**
+Measured on the shipped artifacts:
+
+- All **161** app classes are present in the release dex; the only differences
+  from debug are lambda-desugaring artifacts (`$$ExternalSyntheticLambda0`).
+- Resource entry counts are identical: **78 vs 78**.
+- The gap is dex layout, not content: `classes4.dex` (835 KB) disappears and
+  `classes.dex` shrinks by 544 KB because release-mode D8 keeps only the
+  reachable parts of the `j$/…` core-library desugaring support, which debug
+  carries in full.
+
+Release also stores the same payload more efficiently (7.0 MB uncompressed vs
+9.9 MB). Smaller release than debug is normal and expected, and is not evidence
+of a broken build.
+
 ## Victus Cloud 4.6.0 (the background actually animates, plus an OLED mode)
 
 `versionCode 48` / `versionName 4.6.0`. **Install this over 4.5.2.**

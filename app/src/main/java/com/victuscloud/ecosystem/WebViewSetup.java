@@ -46,10 +46,23 @@ final class WebViewSetup {
             s.setUserAgentString(defaultUa.replace("; wv", ""));
         }
 
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
-            WebSettingsCompat.setAlgorithmicDarkeningAllowed(s, true);
-        } else if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
-            WebSettingsCompat.setForceDark(s, WebSettingsCompat.FORCE_DARK_AUTO);
+        // Algorithmic darkening is a cosmetic nicety, and it is the one call on
+        // the launch path that can still throw on a real device: feature
+        // detection reports support from the provider's feature list, and some
+        // custom-ROM WebViews (and providers mid-update) advertise the feature
+        // they cannot actually service, at which point the androidx compat shim
+        // raises UnsupportedOperationException. Letting that escape would kill
+        // the app on the first frame over a colour preference, so the branch is
+        // tried and abandoned rather than trusted.
+        try {
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+                WebSettingsCompat.setAlgorithmicDarkeningAllowed(s, true);
+            } else if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
+                WebSettingsCompat.setForceDark(s, WebSettingsCompat.FORCE_DARK_AUTO);
+            }
+        } catch (Throwable unsupported) {
+            // UnsupportedOperationException on older providers; nothing else
+            // here is worth a crash either. The page simply renders un-darkened.
         }
     }
 }

@@ -222,7 +222,7 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         // that state `new WebView(this)` throws and takes the whole process down, so
         // the engine is checked before any of the shell is built. The app then
         // explains what to install instead of dying on launch.
-        webViewAvailable = DeviceCompat.isWebViewAvailable(this);
+        webViewAvailable = isWebViewUsable();
         if (!webViewAvailable) {
             showMissingWebViewScreen();
             return;
@@ -411,26 +411,35 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
      * Behind it sits a thin progress bar (now anchored to the top edge, since no
      * native bar exists) and the error overlay. Everything is measured in dp.
      */
+    /**
+     * Whether a WebView engine exists on this device.
+     *
+     * <p>Split out as an overridable seam purely so the launch path below it can
+     * be exercised by a test. Robolectric ships no WebView provider, so without
+     * this the test would stop at the "no WebView" screen and never reach — let
+     * alone verify — the code that actually builds the shell. That is precisely
+     * the blind spot that let four crashing releases through.</p>
+     */
+    protected boolean isWebViewUsable() {
+        return DeviceCompat.isWebViewAvailable(this);
+    }
+
     private void createLayout() {
         rootView = new FrameLayout(this);
 
         webView = new WebView(this);
         webView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
-        rootView.addView(webView, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-
-        // Thin progress bar pinned to the top edge, over the web header.
-        pageProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
-        pageProgress.setMax(100);
-        pageProgress.setProgressTintList(ColorStateList.valueOf(ThemeManager.solid(this)));
-        pageProgress.setVisibility(View.GONE);
-        rootView.addView(pageProgress, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, dp(3), Gravity.TOP));
 
         // Pull-to-refresh on the whole surface; disabled while the page loads so
         // a refresh can't stack on itself. Only our bundled home screen and
         // Victus Cloud pages are refreshable (external sites keep their own
         // gesture space and never silently re-POST anything).
+        //
+        // The WebView is added to the pull wrapper FIRST and never to the root.
+        // Adding it to the root and then "re-parenting" it throws
+        // IllegalStateException("The specified child already has a parent") from
+        // ViewGroup.addView, which killed the app on the first line of launch
+        // for every build since the pull-to-refresh port.
         pullRefresh = new SwipeRefreshLayout(this);
         pullRefresh.addView(webView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -441,10 +450,18 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
             webView.reload();
         });
         pullRefresh.setEnabled(false);
-        // Re-parent so the pull wrapper (not the bare WebView) sits in the root;
-        // the gesture must own the full screen for the pull to start anywhere.
+        // The gesture must own the full screen for the pull to start anywhere,
+        // so the wrapper goes in at index 0 and sits under the progress bar.
         rootView.addView(pullRefresh, 0, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        // Thin progress bar pinned to the top edge, over the web header.
+        pageProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        pageProgress.setMax(100);
+        pageProgress.setProgressTintList(ColorStateList.valueOf(ThemeManager.solid(this)));
+        pageProgress.setVisibility(View.GONE);
+        rootView.addView(pageProgress, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, dp(3), Gravity.TOP));
 
         createErrorOverlay();
 

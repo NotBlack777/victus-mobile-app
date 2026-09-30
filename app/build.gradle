@@ -56,8 +56,8 @@ android {
         // Android 6.0 instead of a clean "unsupported" path.
         minSdk 24
         targetSdk 35
-        versionCode 48
-        versionName '4.6.0'
+        versionCode 49
+        versionName '4.6.1'
     }
 
     signingConfigs {
@@ -79,20 +79,21 @@ android {
     // ========================================================================
     // minifyEnabled / shrinkResources are hard-disabled for BOTH build types.
     //
-    // This is a deliberate stability decision, not an oversight. The 4.5.0/4.5.1
-    // release APK was built with R8 + resource shrinking and crashed instantly on
-    // launch. Comparing the two APKs shows exactly what the shrinker removed:
-    // every one of the 30 `androidx.core.splashscreen` classes is present in the
-    // debug APK and absent from the release one, and the identifier
-    // `installSplashScreen` — which MainActivity.onCreate() calls on the FIRST
-    // line of the launch path — appears nowhere in the shrunk dex. A launch-path
-    // class vanishing under minification is precisely the "crashes on launch,
-    // only the small build" failure.
+    // This is a deliberate stability decision, not an oversight, and the original
+    // diagnosis behind it turned out to be only half right. Shrinking did remove
+    // all 30 `androidx.core.splashscreen` classes from the 4.5.0/4.5.1 release dex,
+    // along with the `installSplashScreen` call that MainActivity.onCreate() makes
+    // on the first line of launch — but that was NOT what was crashing the app. The
+    // real cause was a re-parenting bug in createLayout() that killed every build
+    // of every version, now covered by MainActivityLaunchTest. See CHANGELOG 4.6.1.
+    //
+    // Shrinking stays off regardless: a launch-path class vanishing under
+    // minification is a genuine hazard even when it is not today's bug.
     //
     // APK size is not a goal here. Stability is. Nothing in this build is
     // shrunk, minified, obfuscated or stripped — not code, not resources, not
-    // assets — and `tools/check-no-shrinking.sh` fails the build if anyone ever
-    // turns it back on.
+    // assets — and the `checkNoShrinking` task below fails the build if anyone
+    // ever turns it back on.
     buildTypes {
         debug {
             // Debug builds keep the original applicationId so the phone-only
@@ -127,6 +128,15 @@ android {
         // Shizuku runs as the shell/root identity for in-app updates.
         aidl true
     }
+
+    // Robolectric needs the merged manifest, the real resources and the
+    // compiled assets to boot MainActivity in a JVM test.
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+            returnDefaultValues = true
+        }
+    }
 }
 
 // ============================================================================
@@ -158,7 +168,8 @@ tasks.register('checkNoShrinking') {
         if (code.contains(rulesTemplate[0])) offenders << rulesTemplate[0]
         if (!offenders.isEmpty()) {
             throw new GradleException(
-                    "Shrinking must stay off (it caused an instant-launch crash in 4.5.0).\n" +
+                    "Shrinking must stay off. It stripped launch-path classes in 4.5.0,\n" +
+                    "and the app is now proven not to need a small build to stay stable.\n" +
                     "Found in app/build.gradle: " + offenders.join(', ') + "\n" +
                     "Every build type must keep ${minifySwitch} false and ${shrinkSwitch} false.")
         }
@@ -193,6 +204,13 @@ dependencies {
     // SDK at runtime, so the real implementation is supplied for the test JVM.
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20240303'
+
+    // Robolectric runs MainActivity.onCreate for real, against a stubbed
+    // Android runtime. The app shipped four releases that died on the first
+    // line of launch purely because nothing ever executed that method, so the
+    // launch path is now a test rather than a thing we hope works.
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+    testImplementation 'androidx.test:core:1.6.1'
 }
 
 // ============================================================================
