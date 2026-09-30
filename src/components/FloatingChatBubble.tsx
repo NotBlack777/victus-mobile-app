@@ -180,6 +180,10 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ onNaviga
     ]);
 
     // Simulated reply — the timer is tracked so it can be cancelled on unmount.
+    // Any previous pending reply is cleared first: sending a second message
+    // used to overwrite the ref, orphaning the first timer so it fired after
+    // unmount (a setState on a dead component) and could never be cancelled.
+    if (replyTimerRef.current !== null) clearTimeout(replyTimerRef.current);
     replyTimerRef.current = setTimeout(() => {
       setChatHistory((prev) => [
         ...prev,

@@ -23,6 +23,14 @@ import androidx.webkit.WebViewFeature;
  */
 final class WebViewSetup {
 
+    /**
+     * Origin the bundled React app is served from. Package-private rather than a
+     * private constant on {@code MainActivity} so the security-relevant checks
+     * that ask "is this the bundled app?" (currently the WebRTC origin check)
+     * all read the same value instead of each keeping its own copy.
+     */
+    static final String ASSETS_HOST = "appassets.androidplatform.net";
+
     private WebViewSetup() {
     }
 

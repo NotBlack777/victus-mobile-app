@@ -102,11 +102,21 @@ export const App: React.FC = () => {
         title: resolvedTitle,
       };
 
+      // History and the index into it are ONE piece of state. Updating them
+      // separately let the two disagree: two navigations inside a single React
+      // batch (a double-tapped chip, or navigateTo called from a promise
+      // callback) both read the same stale `currentIndex`, so history was
+      // truncated twice to the same length while the index advanced twice —
+      // leaving currentEntry undefined and silently dropping the user back to
+      // Home. Deriving both from one updater makes that impossible.
+      const indexRef = { value: currentIndex };
       setHistory((prev) => {
-        const next = prev.slice(0, currentIndex + 1);
-        return [...next, newEntry];
+        const base = Math.min(indexRef.value, prev.length - 1);
+        const next = [...prev.slice(0, base + 1), newEntry];
+        indexRef.value = next.length - 1;
+        return next;
       });
-      setCurrentIndex((prev) => prev + 1);
+      setCurrentIndex(() => indexRef.value);
     },
     [currentIndex, triggerLoading]
   );
@@ -200,6 +210,21 @@ export const App: React.FC = () => {
     // otherwise the app stayed signed in until the next reload.
     void signOut();
   }, [triggerLoading, signOut]);
+
+  // The native "Clear app session" dialog wipes the panel session in Java, where
+  // the credential actually lives. Nothing in the web app knew, so the page kept
+  // rendering the signed-in home screen with cached server data until the next
+  // cold start — the exact opposite of what the user just asked for.
+  useEffect(() => {
+    const onCleared = () => {
+      setHistory([HOME_ENTRY]);
+      setCurrentIndex(0);
+      setErrorState({ isOpen: false, message: '' });
+      void signOut();
+    };
+    window.addEventListener('victus:session-cleared', onCleared);
+    return () => window.removeEventListener('victus:session-cleared', onCleared);
+  }, [signOut]);
 
   // Top-level Auth Gate: if no session, render the dedicated login screen
   if (!session) {

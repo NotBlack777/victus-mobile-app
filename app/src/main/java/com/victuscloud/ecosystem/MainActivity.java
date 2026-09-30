@@ -84,7 +84,7 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
      *  time by the `bundleReactApp` Gradle task). */
     private static final String HOME_URL = ASSETS_ORIGIN + "/index.html";
 
-    private static final int TAB_HOME = 0;
+    static final int TAB_HOME = 0;
     /**
      * Tab targets mirror {@code DOCK_TABS} in the web app (the single menu).
      * The shell keeps only the shared navigable URLs; chips themselves are
@@ -252,7 +252,13 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         });
 
         if (savedInstanceState != null) {
+            // The saved tab has to be re-read into selectedDock, not just parsed:
+            // handleWebBackNavigation() consults it to decide between "go Home"
+            // and "leave the app", so leaving it at TAB_HOME made back close the
+            // app from any tab after a rotation or a low-memory restore.
             int restoredTab = savedInstanceState.getInt(KEY_SELECTED_TAB, TAB_HOME);
+            selectedDock = (restoredTab >= 0 && restoredTab < DOCK_URLS.length)
+                    ? restoredTab : TAB_HOME;
             webView.restoreState(savedInstanceState);
         } else {
             String startUrl = resolveStartUrl(getIntent());
@@ -277,14 +283,21 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        // Replace the Activity's own intent. Without this, getIntent() kept
+        // returning the intent the task was *launched* with, so a launcher
+        // shortcut (victus://billing) that arrived while the app was already
+        // running was forgotten the moment the process was recreated.
+        setIntent(intent);
         if (webView == null) return; // no web engine: nothing to navigate
         String url = resolveStartUrl(intent);
         if (url != null) {
             loadUrlInternal(url);
+        } else {
+            markDockSelection(currentPageUrl());
         }
         if (pendingUpdateSheet) {
             pendingUpdateSheet = false;
-            UpdateSheet.show(this);
+            if (!isFinishing() && !isDestroyed()) UpdateSheet.show(this);
         }
     }
 
@@ -325,6 +338,14 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         if (inAppBrowser != null) {
             inAppBrowser.close();
             inAppBrowser = null;
+        }
+        // A pending document picker must be answered before the WebView dies.
+        // The page is blocked on this callback: leaving it unset means the
+        // <input type="file"> it opened never resolves, and the next tap on it
+        // is silently ignored because the old callback is still "in flight".
+        if (filePathCallback != null) {
+            filePathCallback.onReceiveValue(null);
+            filePathCallback = null;
         }
         if (webView != null) {
             // Detach before destroy so the WebView never outlives its context.
@@ -422,6 +443,43 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
      */
     protected boolean isWebViewUsable() {
         return DeviceCompat.isWebViewAvailable(this);
+    }
+
+    // ------------------------------------------------------------- test seams
+    //
+    // Package-private accessors, not behaviour changes. They exist so the
+    // Robolectric suite can assert on the real Activity's state rather than on a
+    // reimplementation of it — the whole reason the bugs in this file shipped is
+    // that nobody could look inside the running shell.
+
+    /** The error overlay, so a test can assert it is (not) visible. */
+    FrameLayout errorOverlayForTest() {
+        return errorOverlay;
+    }
+
+    /** The shell's own tab bookkeeping, consulted by back navigation. */
+    int selectedDockForTest() {
+        return selectedDock;
+    }
+
+    /** The shell's WebView, so a test can prove it is torn down cleanly. */
+    WebView webViewForTest() {
+        return webView;
+    }
+
+    /** Installs a pending document-picker callback without a real picker. */
+    void setFilePathCallbackForTest(ValueCallback<Uri[]> callback) {
+        filePathCallback = callback;
+    }
+
+    /** Runs the overlay's fade-out, which is otherwise only reachable by a tap. */
+    void hideErrorOverlayForTest() {
+        hideErrorOverlay();
+    }
+
+    /** The saved-state key, so a test can build a realistic restore Bundle. */
+    static String selectedTabKeyForTest() {
+        return KEY_SELECTED_TAB;
     }
 
     private void createLayout() {
@@ -641,8 +699,31 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
                     webView.clearSslPreferences();
                     webView.clearHistory();
                     webView.clearMatches();
+                    // The panel session lives in the native layer, not in the
+                    // WebView: the API key is sealed in SecureStore and the
+                    // cookie jar lives in VictusHttp. Wiping only the WebView
+                    // left both intact, so the reload below called authRestore(),
+                    // which re-validated the still-valid key and signed the user
+                    // straight back in — "Clear app session" did nothing at all.
+                    // Sign out locally, WITHOUT revoking: the dialog promises
+                    // that nothing is deleted on the server.
+                    if (victusAuth != null) {
+                        authIo.execute(() -> {
+                            victusAuth.signOut(false);
+                            startAdminAreaCheck(true);
+                        });
+                    }
+                    adminAreas.set(new AdminAreaState(new String[0]));
+                    // Tell the page too, so its cached session and shell state go
+                    // with the native one instead of being re-read on mount.
+                    if (webView != null) {
+                        webView.evaluateJavascript(
+                                "try{window.dispatchEvent(new CustomEvent('victus:session-cleared'));}catch(e){}",
+                                null);
+                    }
                     // Drop the back/forward list too: clearing the session means
                     // "fresh start", not "reload the old page from memory".
+                    selectedDock = TAB_HOME;
                     webView.loadUrl(HOME_URL);
                     toast(getString(R.string.clear_session_done));
                 })
@@ -961,13 +1042,23 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
     private void displayErrorOverlay(String fullMessage, String failingUrl) {
         lastErrorUrl = failingUrl;
         errorMessage.setText(fullMessage);
+        pageProgress.animate().cancel();
         pageProgress.setVisibility(View.GONE);
+        // A fade-out started by hideErrorOverlay() may still be running, and it
+        // ends by setting the overlay GONE. Without cancelling it here, a second
+        // error arriving during those 160ms re-showed nothing: this method saw
+        // the overlay still VISIBLE (so it skipped the fade-in), and the
+        // in-flight fade-out then hid it again — leaving a blank page with no
+        // message and no way forward but the system back gesture. Cancelling
+        // first makes the newest error always win.
+        errorOverlay.animate().cancel();
         if (errorOverlay.getVisibility() != View.VISIBLE) {
             boolean reduceMotion = ThemeManager.isReduceMotion(this);
             errorOverlay.setAlpha(0f);
-            errorOverlay.setVisibility(View.VISIBLE);
-            errorOverlay.animate().alpha(1f).setDuration(reduceMotion ? 0 : 240).start();
         }
+        errorOverlay.setVisibility(View.VISIBLE);
+        boolean reduceMotion = ThemeManager.isReduceMotion(this);
+        errorOverlay.animate().alpha(1f).setDuration(reduceMotion ? 0 : 240).start();
     }
 
     /**
@@ -1445,10 +1536,15 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
     }
 
     private void loadTab(int index) {
+        if (index < 0 || index >= DOCK_URLS.length) return; // never trust an index
         String target = DOCK_URLS[index];
+        // Recorded even when no reload is needed: loadTab(TAB_HOME) is how back
+        // navigation leaves a non-Home tab, and a no-op because the page is
+        // already Home still has to move the bookkeeping, or back would keep
+        // trying to "go Home" forever instead of letting the app close.
+        selectedDock = index;
         // Avoid a full WebView reload when the page is already there.
         if (target.equals(webView.getUrl())) return;
-        selectedDock = index;
         loadUrlInternal(target);
     }
 

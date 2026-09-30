@@ -1,5 +1,118 @@
 # Changelog
 
+## Victus Cloud 4.6.2 (a sweep for the bugs the crash-fix release was hiding)
+
+`versionCode 50` / `versionName 4.6.2`. **Install this over 4.6.1.**
+
+4.6.1 fixed the instant crash, which meant the app ran for the first time in
+four releases — and running it exposed a set of defects that had been sitting
+behind that crash, unreachable and therefore never seen. This release is the
+result of a systematic pass over every path the crash had been hiding, with each
+fix backed by a regression test that was verified to **fail against the old
+code** before being kept.
+
+### Fixed
+
+**"Clear app session" did nothing at all** (the worst of these). The dialog
+wiped WebView cookies, storage, cache and history — but the panel session does
+not live there. The API key is sealed in the Android Keystore by `SecureStore`
+and the cookie jar lives in `VictusHttp`, and neither was touched. So the reload
+that followed called `authRestore()`, which re-validated the still-valid key and
+signed the user straight back in. The user was told their session was cleared
+and was not. The native clear now also signs out of the panel *locally* (without
+revoking the key, which is what the dialog's own wording promises) and tells the
+page, which resets its history, cached session and server data.
+
+**A blank screen with no way out of it.** The error overlay fades out over
+160ms, and its fade-out sets the overlay `GONE` when it ends. `showError()`
+only re-showed the overlay when it was not already `VISIBLE` — which it *was*,
+for the whole 160ms. So a page that failed again inside that window had its new
+message written and then hidden by the in-flight fade-out: no message, no Retry,
+no Go Home, just the system back gesture. The fade is now cancelled before the
+new one starts, so the newest error always wins.
+
+**Back closed the app instead of going Home after a rotation.** `onSaveInstanceState`
+saved the selected tab, and `onCreate` parsed it into a local variable that was
+then never used — `selectedDock` stayed at `TAB_HOME`. Back navigation consults
+that value to choose between "go Home" and "leave the app", so from any tab,
+after any rotation or low-memory restore, back killed the app. The value is now
+restored, and an out-of-range saved tab falls back to Home instead of indexing
+off the end of the dock.
+
+**Launcher shortcuts were forgotten.** `onNewIntent` acted on a `victus://`
+shortcut but never called `setIntent()`, so the framework kept re-delivering the
+intent the task was *launched* with. Any shortcut that arrived while the app was
+already running was lost the moment the process was recreated.
+
+**The file picker could be wedged forever.** A document picker left open across
+a destroy left the page's `<input type="file">` blocked: its `ValueCallback` was
+never answered, so the WebView considered the request still in flight and ignored
+every later tap on that input. It is now answered on destroy.
+
+**Any origin could ask for the camera and microphone.** The WebRTC permission
+handler restricted *which resources* could be granted, but never checked *who*
+was asking. This shell loads third-party content alongside its own pages, so a
+malicious sub-resource on an otherwise trusted page could open a live capture
+stream. The origin is now checked as well, and the check requires an `https`
+scheme — a `file://victuscloud.com`-shaped origin carries our hostname but is not
+a web origin. This also found a second gap while the test was being written: the
+first version of the fix matched on host alone.
+
+**Two navigations in one React batch could drop you back to Home.** `App.tsx`
+updated the history array and its index as two separate state updates, both
+reading the same captured `currentIndex`. A double-tapped chip, or a navigation
+from a promise callback, truncated history twice to the same length while the
+index advanced twice — leaving `currentIndex` past the end of the array, so
+`currentEntry` was `undefined` and the app silently fell back to Home. The index
+is now derived from the history update, so the two cannot disagree.
+
+**Leaked timers firing into unmounted components.** The toast provider scheduled
+an untracked `setTimeout` per toast, and the chat bubble overwrote its pending
+reply timer instead of clearing it, orphaning it so it fired after unmount and
+could never be cancelled. Both are tracked and cleared.
+
+### Also hardened
+
+- `loadTab()` bounds-checks its index and now records the tab selection even when
+  the target page is already loaded — a no-op "go Home" previously left the
+  bookkeeping stale, so back kept trying to go Home instead of letting the app
+  close.
+- `onNewIntent` guards the update sheet against a finishing/destroyed activity
+  and re-marks the current dock selection, so a shortcut no longer leaves the
+  menu showing the wrong chip.
+- `WebViewSetup.ASSETS_HOST` is now one shared constant instead of a private copy
+  on `MainActivity` and a literal in the chrome client, so the security-relevant
+  "is this the bundled app?" checks cannot drift apart.
+
+### Tests
+
+Ten new tests, all verified to fail against the code they replace:
+
+- `MainActivityStateTest` (9) — Robolectric, drives a real `MainActivity`: the
+  error-overlay fade race, tab survival across a restore, corrupt saved state,
+  shortcut/deep-link intent retention, the file-picker teardown, and WebView
+  detachment. Reverting the fixes makes four of them fail.
+- `WebRtcOriginPolicyTest` (10) — pins the camera/microphone origin allowlist,
+  including the suffix-confusion hosts (`notvictuscloud.com`,
+  `victuscloud.com.evil.example`) and the fail-closed cases.
+- `regressions.test.ts` (6) — the web half: the clear-session event handshake
+  and its cleanup, toast timer cancellability, and navigation-history
+  consistency.
+
+Full suite at this commit: **129 web tests**, **135 JVM tests**, 0 failures;
+`tsc` clean; both APKs assemble unshrunk (`checkNoShrinking: OK`); 52/52 WebView
+checks; backdrop and panel contract checks pass.
+
+### Still outstanding (not fixable from the app)
+
+- `www.victuscloud.com` serves an **expired certificate** (expired 2026-09-02).
+  This needs renewal at the server; the app folds `www.` onto the apex host
+  (`InAppLinks.canonicalizeAuthority`) so it never navigates there itself, but the
+  hostname is still broken for anything else.
+- On-device launch verification is still impossible in this environment (no
+  KVM, one core, 1.98 GB RAM — the emulator cannot start). Everything above is
+  verified by the JVM/Robolectric suite and by reversion, not by a real device.
+
 ## Victus Cloud 4.6.1 (the real instant-launch crash, found and fixed)
 
 `versionCode 49` / `versionName 4.6.1`. **Install this over 4.6.0.**
