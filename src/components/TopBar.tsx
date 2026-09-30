@@ -13,6 +13,7 @@ import { useTheme } from '../context/ThemeContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useNotifications } from '../context/NotificationContext.tsx';
 import { hasShellBridge, shellOpenNativeMenu, shellUiState } from '../services/victusBridge.ts';
+import { haptic } from '../utils/haptics.ts';
 
 interface TopBarProps {
   canGoBack: boolean;
@@ -83,7 +84,10 @@ export const TopBar: React.FC<TopBarProps> = ({
           {/* Left button: Back arrow when subpage, or brand logo mark on root (NO duplicate hamburger button) */}
           {canGoBack ? (
             <button
-              onClick={onBack}
+              onClick={() => {
+                haptic();
+                onBack();
+              }}
               aria-label="Back"
               className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-white/[0.04] border border-white/[0.08] text-slate-300 hover:text-white hover:bg-white/[0.08] active:scale-95 transition-all cursor-pointer flex-shrink-0"
               style={{
@@ -245,7 +249,10 @@ export const TopBar: React.FC<TopBarProps> = ({
 
           {/* Refresh Page */}
           <button
-            onClick={onRefresh}
+            onClick={() => {
+              haptic();
+              onRefresh();
+            }}
             aria-label="Refresh"
             title="Refresh"
             className={`w-8.5 h-8.5 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl border active:scale-95 transition-all cursor-pointer ${

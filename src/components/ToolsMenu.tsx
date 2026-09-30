@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   Compass,
   Server,
@@ -27,6 +27,7 @@ import { useToast } from './Toast.tsx';
 import { useTheme } from '../context/ThemeContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { openVictusLink } from '../utils/navigation.ts';
+import { haptic } from '../utils/haptics.ts';
 import {
   hasShellBridge,
   shellAdminAreas,
@@ -160,6 +161,23 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
     onOpenClearSession();
   };
 
+  /**
+   * One capture-phase listener on the drawer gives every row the same short tap
+   * the native Tools menu used to fire, without threading `haptic()` through a
+   * dozen handlers that would each have to remember it.
+   */
+  const drawerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const drawer = drawerRef.current;
+    if (!drawer) return;
+    const onPointerDown = (event: Event) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('button')) haptic();
+    };
+    drawer.addEventListener('pointerdown', onPointerDown, true);
+    return () => drawer.removeEventListener('pointerdown', onPointerDown, true);
+  });
+
   const handleLogout = async () => {
     onClose();
     await signOut();
@@ -173,6 +191,7 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
     >
       {/* Sidebar drawer sliding from left matching reference screenshots */}
       <div
+        ref={drawerRef}
         className="w-72 sm:w-80 max-w-[85vw] h-full bg-[#0c0c12] border-r border-white/[0.08] flex flex-col justify-between shadow-2xl animate-in slide-in-from-left duration-200 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >

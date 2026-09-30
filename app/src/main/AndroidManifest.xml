@@ -3,6 +3,10 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Short tap feedback on key actions (channel chips, menu rows, back,
+         refresh). Normal permission, never prompted for, and the WebView API it
+         backs degrades to silence on a device without a vibrator. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Only needed on API 23-28 for downloads into public storage.
          On API 29+ downloads go through MediaStore (scoped storage), no permission. -->
     <uses-permission
