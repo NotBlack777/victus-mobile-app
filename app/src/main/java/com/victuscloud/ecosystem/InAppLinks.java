@@ -20,6 +20,21 @@ final class InAppLinks {
 
     static final String ROOT_DOMAIN = "victuscloud.com";
 
+    /**
+     * The only host that carries the apex site's certificate.
+     *
+     * <p>{@code victuscloud.com}'s certificate lists {@code DNS:victuscloud.com}
+     * and nothing else, while {@code www.victuscloud.com} has been left behind
+     * with a certificate that expired — a navigation there is a guaranteed
+     * certificate failure ("Can't reach Victus Cloud"). Every URL that reaches
+     * the shell is therefore folded onto the apex host before it is opened, so
+     * the app can never walk into a host the site itself no longer serves.</p>
+     */
+    static final String CANONICAL_ROOT_DOMAIN = "victuscloud.com";
+
+    /** The retired host folded onto {@link #CANONICAL_ROOT_DOMAIN}. */
+    private static final String RETIRED_WWW_PREFIX = "www." + ROOT_DOMAIN;
+
     private InAppLinks() {
     }
 
@@ -41,6 +56,31 @@ final class InAppLinks {
      */
     static String toExternalHttpsUrl(String url) {
         return normalizedHttps(url, false);
+    }
+
+    /**
+     * Folds {@code www.victuscloud.com} (and its explicit :443 form) onto the
+     * apex host, leaving every other host and the rest of the URL byte for byte.
+     * Returns the input unchanged when it is not the retired host.
+     */
+    static String canonicalizeAuthority(String authorityAndPath) {
+        if (authorityAndPath == null) return null;
+        String rest = authorityAndPath;
+        String head = rest;
+        String tail = "";
+        int slash = rest.indexOf('/');
+        if (slash >= 0) {
+            head = rest.substring(0, slash);
+            tail = rest.substring(slash);
+        }
+        String lower = head.toLowerCase(Locale.US);
+        if (lower.equals(RETIRED_WWW_PREFIX)) {
+            return CANONICAL_ROOT_DOMAIN + tail;
+        }
+        if (lower.equals(RETIRED_WWW_PREFIX + ":443")) {
+            return CANONICAL_ROOT_DOMAIN + tail;
+        }
+        return rest;
     }
 
     private static String normalizedHttps(String url, boolean victusHostOnly) {
@@ -73,7 +113,7 @@ final class InAppLinks {
         // round-trips as "next=/files") and quietly change the target.
         int separator = trimmed.indexOf("://");
         if (separator < 0) return null;
-        return "https://" + trimmed.substring(separator + 3);
+        return "https://" + canonicalizeAuthority(trimmed.substring(separator + 3));
     }
 
     /** {@code victuscloud.com} or any of its subdomains. */

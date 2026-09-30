@@ -84,7 +84,34 @@ final class SettingsSheet {
     private Switch solidSwitch;
     private Switch motionSwitch;
     private Switch externalLinksSwitch;
-    private Switch securitySwitch;
+    /**
+     * Stands where the old "Trust Victus Cloud certificates" switch was.
+     *
+     * <p>That switch defaulted to ON and made the shell call
+     * {@code SslErrorHandler.proceed()} for any certificate the device could not
+     * verify — a blanket TLS bypass, and the exact thing this app must never do.
+     * It is gone; the connection is always refused. What is left is a plain note
+     * telling the user where a certificate problem is actually fixed (system date
+     * &amp; time, and the Android System WebView).</p>
+     */
+    private LinearLayout buildSecurityNote() {
+        LinearLayout wrap = new LinearLayout(activity);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        wrap.addView(sectionLabel(str(R.string.settings_security_title)), wrapTop(0));
+
+        TextView note = text(str(R.string.settings_security_note), 12, false,
+                color(R.color.error_text));
+        LinearLayout.LayoutParams noteParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        noteParams.topMargin = dp(4);
+        wrap.addView(note, noteParams);
+
+        LinearLayout.LayoutParams wrapParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        wrapParams.topMargin = dp(18);
+        wrap.setLayoutParams(wrapParams);
+        return wrap;
+    }
     private final TextView[] displayModeButtons = new TextView[3];
     private final View[] backgroundButtons = new View[4];
     /** Guards against the solid-switch listener re-firing during programmatic
@@ -208,7 +235,7 @@ final class SettingsSheet {
         sheet.addView(buildExternalLinksRow(), matchTop(dp(18)));
 
         sheet.addView(divider(), matchTop(dp(22), dp(1)));
-        sheet.addView(buildSecurityRow(), matchTop(dp(18)));
+        sheet.addView(buildSecurityNote(), matchTop(dp(18)));
 
         sheet.addView(sectionLabel(str(R.string.settings_display_title)), wrapTop(dp(24)));
         sheet.addView(buildDisplayModeRow(), matchTop(dp(10)));
@@ -643,45 +670,6 @@ final class SettingsSheet {
         return wrap;
     }
 
-    // ------------------------------------------------------------- security
-
-    private LinearLayout buildSecurityRow() {
-        LinearLayout wrap = new LinearLayout(activity);
-        wrap.setOrientation(LinearLayout.VERTICAL);
-        wrap.addView(sectionLabel(str(R.string.settings_security_title)), wrapTop(0));
-
-        LinearLayout row = new LinearLayout(activity);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-
-        LinearLayout textCol = new LinearLayout(activity);
-        textCol.setOrientation(LinearLayout.VERTICAL);
-        textCol.addView(text(str(R.string.settings_trust_ssl), 14, true, color(R.color.chip_text)));
-        TextView desc = text(str(R.string.settings_trust_ssl_desc), 12, false, color(R.color.error_text));
-        LinearLayout.LayoutParams descParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        descParams.topMargin = dp(2);
-        textCol.addView(desc, descParams);
-        LinearLayout.LayoutParams textColParams = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        textColParams.rightMargin = dp(12);
-        row.addView(textCol, textColParams);
-
-        securitySwitch = new Switch(activity);
-        securitySwitch.setChecked(ThemeManager.isTrustVictusSsl(activity));
-        securitySwitch.setThumbTintList(ColorStateList.valueOf(color(R.color.brand_a)));
-        securitySwitch.setOnCheckedChangeListener((btn, checked) -> {
-            ThemeManager.setTrustVictusSsl(activity, checked);
-        });
-        row.addView(securitySwitch);
-
-        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        rowParams.topMargin = dp(12);
-        wrap.addView(row, rowParams);
-        return wrap;
-    }
-
     // ---------------------------------------------------------- display mode
 
     private LinearLayout buildDisplayModeRow() {
@@ -768,7 +756,6 @@ final class SettingsSheet {
             customBlock.setVisibility(View.GONE);
             motionSwitch.setChecked(false);
             if (externalLinksSwitch != null) externalLinksSwitch.setChecked(false);
-            if (securitySwitch != null) securitySwitch.setChecked(true);
             refreshPreview();
             activity.applyDynamicAccent();
             if (wasLight != !ThemeManager.isDark(activity)) {

@@ -111,6 +111,47 @@ public class InAppLinksTest {
     }
 
     @Test
+    public void foldsTheRetiredWwwHostOntoTheApexHost() {
+        // www.victuscloud.com has been left behind with an expired certificate
+        // (verified: notAfter 2026-09-02). Opening it is a guaranteed certificate
+        // failure, so every URL that reaches the shell is folded onto the apex,
+        // whose certificate is the one that actually covers the site.
+        assertEquals("https://victuscloud.com",
+                InAppLinks.toInAppHttpsUrl("https://www.victuscloud.com"));
+        assertEquals("https://victuscloud.com/support",
+                InAppLinks.toInAppHttpsUrl("https://www.victuscloud.com/support"));
+        assertEquals("https://victuscloud.com/support?a=1&b=2",
+                InAppLinks.toInAppHttpsUrl("http://www.victuscloud.com/support?a=1&b=2"));
+        assertEquals("https://victuscloud.com/",
+                InAppLinks.toInAppHttpsUrl("https://WWW.VICTUSCLOUD.COM/"));
+        assertEquals("https://victuscloud.com/",
+                InAppLinks.toInAppHttpsUrl("https://www.victuscloud.com:443/"));
+    }
+
+    @Test
+    public void foldingWwwLeavesEveryOtherHostAlone() {
+        assertEquals("https://control.victuscloud.com/admin",
+                InAppLinks.toInAppHttpsUrl("https://control.victuscloud.com/admin"));
+        assertEquals("https://billing.victuscloud.com",
+                InAppLinks.toInAppHttpsUrl("https://billing.victuscloud.com"));
+        // A subdomain that merely starts with "www" is not the retired host.
+        assertEquals("https://www.billing.victuscloud.com",
+                InAppLinks.toInAppHttpsUrl("https://www.billing.victuscloud.com"));
+        assertEquals("https://victuscloud.com.evil.com",
+                InAppLinks.toExternalHttpsUrl("https://victuscloud.com.evil.com"));
+    }
+
+    @Test
+    public void canonicalizesOnlyTheAuthorityNotThePath() {
+        assertEquals("victuscloud.com/a/www.b",
+                InAppLinks.canonicalizeAuthority("www.victuscloud.com/a/www.b"));
+        assertEquals("control.victuscloud.com",
+                InAppLinks.canonicalizeAuthority("control.victuscloud.com"));
+        assertEquals("victuscloud.com",
+                InAppLinks.canonicalizeAuthority("WWW.victuscloud.com"));
+    }
+
+    @Test
     public void sanitizesPageSuppliedTitles() {
         assertEquals("Control Panel", InAppLinks.sanitizeTitle("Control Panel", "Victus Cloud"));
         assertEquals("Victus Cloud", InAppLinks.sanitizeTitle(null, "Victus Cloud"));

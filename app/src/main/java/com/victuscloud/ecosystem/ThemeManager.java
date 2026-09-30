@@ -74,7 +74,6 @@ final class ThemeManager {
     private static final String KEY_COLOR_MODE = "color_mode";
     private static final String KEY_BACKGROUND = "background";
     private static final String KEY_OPEN_LINKS_EXTERNALLY = "open_links_externally";
-    private static final String KEY_TRUST_VICTUS_SSL = "trust_victus_ssl";
 
     private ThemeManager() {
     }
@@ -246,21 +245,6 @@ final class ThemeManager {
 
     static void setOpenLinksExternally(Context c, boolean openExternal) {
         prefs(c).edit().putBoolean(KEY_OPEN_LINKS_EXTERNALLY, openExternal).apply();
-    }
-
-    // -------------------------------------------------------------- security
-
-    /**
-     * Whether to trust SSL certificates for legitimate Victus Cloud domains (*.victuscloud.com).
-     * Defaults to true so users on devices with outdated root certificate stores (Let's Encrypt
-     * root/intermediate updates) are not blocked by SslError.SSL_UNTRUSTED (error 3).
-     */
-    static boolean isTrustVictusSsl(Context c) {
-        return prefs(c).getBoolean(KEY_TRUST_VICTUS_SSL, true);
-    }
-
-    static void setTrustVictusSsl(Context c, boolean trust) {
-        prefs(c).edit().putBoolean(KEY_TRUST_VICTUS_SSL, trust).apply();
     }
 
     // ----------------------------------------------------------------- reset

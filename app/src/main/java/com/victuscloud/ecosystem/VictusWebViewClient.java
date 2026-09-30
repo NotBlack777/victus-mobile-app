@@ -173,17 +173,12 @@ final class VictusWebViewClient extends WebViewClient {
      *       certificate must not blank the entire page with a scary error screen —
      *       the resource is cancelled, the page renders without it. (The page's
      *       own host failing still gets the full-screen treatment.)</li>
-     *   <li><b>The "Trust Victus Cloud certificates" setting (default on) only
-     *       covers {@code SSL_UNTRUSTED} and {@code SSL_NOTYETVALID} on real
-     *       *.victuscloud.com hosts</b> — the two codes actually caused by an
-     *       outdated device root store or a wrong clock. It never blesses an
-     *       expired or hostname-mismatched certificate: those are blocked even
-     *       for trusted domains, because proceeding there would be genuinely
-     *       unsafe.</li>
-     *   <li><b>Everything else is cancelled.</b> Silently calling
-     *       {@code handler.proceed()} for any other case would turn off
-     *       certificate validation — a real security hole and a Play Store
-     *       policy violation.</li>
+     *   <li><b>Everything else is cancelled, always.</b> There is no
+     *       certificate override in this app: no preference, no "proceed anyway"
+     *       button, and no code path that calls {@code handler.proceed()}. A
+     *       certificate the device cannot verify is a device problem to fix
+     *       (update Android System WebView, or correct the device's date &amp;
+     *       time) — not something an app may talk its way past.</li>
      * </ol>
      *
      * <p>Blocked main-frame errors still get the error screen, whose message
@@ -210,17 +205,12 @@ final class VictusWebViewClient extends WebViewClient {
         }
 
         int code = error.getPrimaryError();
-        boolean deviceTrustIssue = code == SslError.SSL_UNTRUSTED || code == SslError.SSL_NOTYETVALID;
 
-        // Settings → Security → "Trust Victus Cloud certificates": accept a
-        // Victus certificate the device's root store doesn't know yet. Scoped
-        // to *.victuscloud.com AND to the two device-side error codes — an
-        // expired or mismatched certificate is never auto-accepted.
-        if (isInternal && deviceTrustIssue && ThemeManager.isTrustVictusSsl(host.context())) {
-            handler.proceed();
-            return;
-        }
-
+        // The connection is always refused. There is no setting, and no code
+        // path, that ever calls handler.proceed(): proceeding past a certificate
+        // error turns TLS off, which is a real security hole and a Play Store
+        // policy violation. The honest escape hatch for a page you still need is
+        // the device browser, which shows its own certificate warning.
         String message;
         boolean offerWebViewUpdate;
         switch (code) {
