@@ -1,5 +1,71 @@
 # Changelog
 
+## Victus Cloud 4.5.2 (fix the instant-launch crash — shrinking is now off, permanently)
+
+`versionCode 47` / `versionName 4.5.2`. **Install this over 4.5.1.**
+
+### The crash, and what actually caused it
+
+The 4.5.0/4.5.1 release APK (816 KB) crashed instantly on launch. The size drop
+was the clue, and the cause was found by **diffing the two APKs** rather than by
+guessing — comparing the shrunk release against the unshrunk debug build of the
+very same commit:
+
+| | debug (unshrunk) | release (shrunk) |
+| --- | --- | --- |
+| `androidx.core.splashscreen` classes | **30** | **0** |
+| `installSplashScreen` in the dex | present | **gone** |
+| Resources | 400 | 370 |
+
+`MainActivity.onCreate()` calls `SplashScreen.installSplashScreen(this)` as the
+**first statement of the launch path**. R8 removed the entire
+`androidx.core.splashscreen` backport underneath it, and
+`shrinkResources` removed the splash-screen layout, drawable and dimens it needs
+on pre-Android-12 devices. A class on the very first line of `onCreate`
+disappearing under minification is exactly the "starts and dies immediately, and
+only in the small build" failure.
+
+The proguard rules that were meant to prevent this (`-keep` on
+`@JavascriptInterface` members and on `androidx.webkit.**`) never mentioned the
+splash screen, which is only reachable through a library whose sole reference is
+the launch path — precisely the case shrinking turns into an undiagnosable crash.
+
+### The fix
+
+- `minifyEnabled false` and `shrinkResources false` for **both** build types, no
+  `proguardFiles`, no R8, no ProGuard, no obfuscation, no asset or resource
+  removal. **Size is not a goal; being able to start is.**
+- `proguard-rules.pro` is no longer applied. It is kept in the repo as a record of
+  what those rules used to do and why shrinking is not to be revisited without a
+  device to launch the result on.
+- `checkNoShrinking`, a Gradle verification task wired into `preDebugBuild` and
+  `preReleaseBuild`, **fails the build** if anyone sets `minifyEnabled true`,
+  `shrinkResources true`, or re-adds `proguardFiles`. It inspects non-comment
+  lines only, so documenting the old values in a comment cannot trip it.
+- `tests/no-shrinking.test.ts` pins the same rule in the test suite, including
+  that the splash screen is still installed on the first line of `onCreate`.
+
+**Verified after the fix**, same commit, no other change involved:
+
+- `androidx.core.splashscreen`: **29/29** real classes back in the release dex,
+  `installSplashScreen` present.
+- Classes present in debug but absent from release: **0 non-synthetic ones**. (The
+  368 that differ are all `$$ExternalSynthetic*` and `j$/…r8/Desugar*` classes the
+  compiler and desugarer generate differently for the two variants — not
+  removed code.)
+- Resources: **400 in debug, 400 in release, 0 missing.**
+- Assets: byte-identical apart from the standard `baseline.prof` the release
+  variant carries.
+- Release APK **816 KB → 2.65 MB**. It is smaller than the 4.19 MB *debug* APK
+  only because the debuggable variant carries extra debugger symbols; nothing is
+  stripped from the release build.
+
+### Everything else from 4.5.0/4.5.1 is unchanged and still green
+
+`tsc -b --noEmit` clean · 104 web tests · 104 JVM tests · `assembleDebug
+assembleRelease testDebugUnitTest` BUILD SUCCESSFUL · 52/52 headless WebView
+checks · panel contract check PASS · both APKs signed `CN=Victus Cloud`.
+
 ## Victus Cloud 4.5.1 (restore tap feedback, honest error messages)
 
 `versionCode 46` / `versionName 4.5.1`. Same work as 4.5.0 plus three fixes
