@@ -112,11 +112,64 @@ html.light {
   --grid-mask: linear-gradient(to bottom, rgba(0, 0, 0, 0.3), transparent 70%);
 }
 
-/* Reduce motion mode */
+/* Reduce motion mode.
+   The iteration count matters: a looping animation with a 0.01s duration does
+   not freeze, it re-runs ~100x a second and strobes. Forcing a single
+   iteration lets every animation settle instantly on its end state. */
 html.reduce-motion,
 html.reduce-motion * {
-  transition-duration: 0.01s !important;
-  animation-duration: 0.01s !important;
+  transition-duration: 0.01ms !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+}
+
+/* Translucent card surfaces.
+   The panels are opaque by default, which hid the animated backdrop
+   completely on the home screen. These derive a see-through variant from
+   whatever the active preset painted into --panel, so every theme picks it up
+   for free. The plain rgba value is the fallback for engines without
+   color-mix; the second declaration wins wherever it is supported. */
+:root {
+  --panel-soft: rgba(20, 20, 28, 0.78);
+  --panel-soft: color-mix(in srgb, var(--panel) 78%, transparent);
+  --panel-strong-soft: rgba(23, 23, 34, 0.84);
+  --panel-strong-soft: color-mix(in srgb, var(--panel-strong) 84%, transparent);
+}
+
+html.light {
+  --panel-soft: rgba(255, 255, 255, 0.84);
+  --panel-soft: color-mix(in srgb, var(--panel) 84%, transparent);
+  --panel-strong-soft: rgba(241, 245, 249, 0.88);
+  --panel-strong-soft: color-mix(in srgb, var(--panel-strong) 88%, transparent);
+}
+
+/* ============================================================
+   OLED panel mode.
+   True black so the pixels switch off entirely, no grid overlay
+   (it would light the whole panel up), and deeper shadows to keep
+   the sense of elevation that a black canvas removes.
+   ============================================================ */
+html.oled {
+  --grid-line: transparent;
+  --metric-bg: rgba(255, 255, 255, 0.04);
+  --quick-bg: rgba(255, 255, 255, 0.03);
+  --shadow-hero: 0 1.75rem 5.625rem rgba(0, 0, 0, 0.85);
+  --shadow-card: 0 1.375rem 3.75rem rgba(0, 0, 0, 0.75);
+  --shadow-logo: 0 1.125rem 3.4375rem rgba(0, 0, 0, 0.7);
+  --shadow-glyph: 0 0.875rem 2rem rgba(0, 0, 0, 0.6);
+  --shadow-primary: 0 1.125rem 3.125rem rgba(0, 0, 0, 0.7);
+}
+
+html.oled body {
+  background-color: #000;
+  background-image: none;
+}
+
+/* Nothing paints over the canvas, so the true black actually reaches the
+   panel instead of being veiled by the always-on grid overlay. */
+html.oled body::before {
+  display: none;
 }
 
 body {
@@ -238,64 +291,85 @@ body::before {
   overflow: hidden;
   pointer-events: none;
   contain: paint;
+  /* Let the colour fields add light to the near-black canvas instead of
+     compositing over it. `screen` is the cheapest blend that keeps the aurora
+     reading as light rather than as a translucent film, and it is still a
+     compositor-only operation for a handful of large layers. */
+  isolation: isolate;
 }
 
 /* --- Aurora: drifting colour fields ------------------------------------- */
 .bgfx-blob {
   position: absolute;
-  width: 78%;
-  height: 78%;
+  width: 150%;
+  height: 150%;
   border-radius: 50%;
   transform: translate3d(0, 0, 0);
   will-change: transform;
-  animation-timing-function: ease-in-out;
+  mix-blend-mode: screen;
+  animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
   animation-iteration-count: infinite;
-  animation-duration: 30s;
+  animation-duration: 26s;
 }
 
+/* Placed so the bright core of each field sits just inside the viewport —
+   previously the cores were parked off-screen and only the faint 68% tail
+   ever showed, which is why the motion read as "nothing is happening". */
 .bgfx-blob-1 {
-  top: -20%;
-  left: -24%;
+  top: -62%;
+  left: -58%;
   animation-name: bgfx-drift-1;
 }
 
 .bgfx-blob-2 {
-  bottom: -24%;
-  right: -26%;
+  top: 18%;
+  left: 22%;
   animation-name: bgfx-drift-2;
-  animation-duration: 38s;
+  animation-duration: 34s;
 }
 
 .bgfx-blob-3 {
-  top: 30%;
-  left: 22%;
-  width: 60%;
-  height: 60%;
+  top: 52%;
+  left: -34%;
+  width: 120%;
+  height: 120%;
   animation-name: bgfx-drift-3;
-  animation-duration: 46s;
+  animation-duration: 42s;
 }
 
 @keyframes bgfx-drift-1 {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-  50% { transform: translate3d(40%, 24%, 0) scale(1.16); }
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  25%  { transform: translate3d(22%, 12%, 0) scale(1.18); }
+  50%  { transform: translate3d(40%, 30%, 0) scale(1.02); }
+  75%  { transform: translate3d(14%, 6%, 0) scale(0.9); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
 }
 
 @keyframes bgfx-drift-2 {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1.08); }
-  50% { transform: translate3d(-36%, -22%, 0) scale(0.92); }
+  0%   { transform: translate3d(0, 0, 0) scale(1.05); }
+  25%  { transform: translate3d(-18%, 14%, 0) scale(0.88); }
+  50%  { transform: translate3d(-32%, -8%, 0) scale(1.16); }
+  75%  { transform: translate3d(-10%, -18%, 0) scale(0.94); }
+  100% { transform: translate3d(0, 0, 0) scale(1.05); }
 }
 
 @keyframes bgfx-drift-3 {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(0.96); }
-  50% { transform: translate3d(-20%, 32%, 0) scale(1.2); }
+  0%   { transform: translate3d(0, 0, 0) scale(0.94); }
+  25%  { transform: translate3d(26%, -14%, 0) scale(1.2); }
+  50%  { transform: translate3d(34%, 16%, 0) scale(1); }
+  75%  { transform: translate3d(8%, -4%, 0) scale(0.86); }
+  100% { transform: translate3d(0, 0, 0) scale(0.94); }
 }
 
 /* --- Mesh: one grid cell of travel, so the loop is seamless ------------- */
 .bgfx-mesh-wrap {
   position: absolute;
   inset: 0;
-  -webkit-mask-image: radial-gradient(ellipse 85% 62% at 50% 38%, #000 10%, transparent 78%);
-  mask-image: radial-gradient(ellipse 85% 62% at 50% 38%, #000 10%, transparent 78%);
+  /* The old ellipse peaked at 38% height and was fully faded by 78%, so the
+     bottom two-fifths of a tall phone showed no grid at all. This one covers
+     the whole panel and only softens the very corners. */
+  -webkit-mask-image: radial-gradient(ellipse 120% 100% at 50% 42%, #000 42%, transparent 96%);
+  mask-image: radial-gradient(ellipse 120% 100% at 50% 42%, #000 42%, transparent 96%);
 }
 
 .bgfx-mesh {
@@ -305,7 +379,8 @@ body::before {
   top: -44px;
   bottom: 0;
   will-change: transform;
-  animation: bgfx-mesh-scroll 16s linear infinite;
+  mix-blend-mode: screen;
+  animation: bgfx-mesh-scroll 9s linear infinite;
 }
 
 @keyframes bgfx-mesh-scroll {
@@ -315,13 +390,34 @@ body::before {
 
 .bgfx-mesh-glow {
   position: absolute;
-  inset: 0 0 42% 0;
-  animation: bgfx-glow 12s ease-in-out infinite;
+  inset: 0;
+  mix-blend-mode: screen;
+  animation: bgfx-glow 9s ease-in-out infinite;
 }
 
 @keyframes bgfx-glow {
-  0%, 100% { opacity: 0.45; }
-  50% { opacity: 0.95; }
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* A slow highlight sweeping down the grid, so the mesh reads as "scanning"
+   rather than as a static texture that scrolls. */
+.bgfx-mesh-sweep {
+  position: absolute;
+  left: -20%;
+  right: -20%;
+  height: 45%;
+  mix-blend-mode: screen;
+  will-change: transform, opacity;
+  animation: bgfx-sweep 11s ease-in-out infinite;
+}
+
+@keyframes bgfx-sweep {
+  0%   { transform: translate3d(0, -60%, 0); opacity: 0; }
+  18%  { opacity: 0.9; }
+  50%  { transform: translate3d(0, 60%, 0); opacity: 0.55; }
+  82%  { opacity: 0.9; }
+  100% { transform: translate3d(0, 160%, 0); opacity: 0; }
 }
 
 /* --- Starfield: canvas, drawn once when motion is off ------------------- */
@@ -331,12 +427,16 @@ body::before {
   display: block;
   width: 100%;
   height: 100%;
+  mix-blend-mode: screen;
 }
 
-/* Motion disabled (in-app toggle or the OS preference): hold still. */
+/* Motion disabled (in-app toggle or the OS preference): hold still.
+   `animation: none` rather than a 0.01s duration — a looping animation with a
+   near-zero duration does not freeze, it strobes. */
 .bgfx-static .bgfx-blob,
 .bgfx-static .bgfx-mesh,
-.bgfx-static .bgfx-mesh-glow {
+.bgfx-static .bgfx-mesh-glow,
+.bgfx-static .bgfx-mesh-sweep {
   animation: none !important;
 }
 

@@ -83,6 +83,20 @@ jobs:
           # key (see app/build.gradle), so either can upgrade an install.
           ./gradlew assembleDebug assembleRelease testDebugUnitTest --no-daemon --console=plain
 
+      # The web unit tests, which include the guards on the backdrop's opacity,
+      # size and reduced-motion behaviour.
+      - name: Web unit tests
+        run: bun test
+
+      # Grades the animated backdrop on real pixels: screenshots the built app
+      # and measures how much of it actually moves. The background shipped for
+      # several releases with every keyframe running and nothing visibly
+      # changing, which is exactly the failure a unit test cannot see.
+      - name: Backdrop visibility check
+        run: |
+          bunx playwright install --with-deps chromium
+          node scripts/verify-backdrop.mjs
+
       # Drives the app's own VictusApi/VictusHttp against a contract-faithful
       # panel over real TLS sockets: sign-in, server list, power, console. Needs
       # port 443, so it skips itself (exit 3) on a runner that cannot bind it.

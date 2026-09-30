@@ -114,6 +114,7 @@ final class SettingsSheet {
     }
     private final TextView[] displayModeButtons = new TextView[3];
     private final View[] backgroundButtons = new View[4];
+    private final View[] displayPanelButtons = new View[2];
     /** Guards against the solid-switch listener re-firing during programmatic
      *  refreshes (e.g. tapping a different preset), which would otherwise
      *  silently force the preset back to Custom. */
@@ -228,6 +229,13 @@ final class SettingsSheet {
         sheet.addView(bgHint, bgHintParams);
         sheet.addView(buildBackgroundGrid(), matchTop(0));
 
+        sheet.addView(sectionLabel(str(R.string.settings_panel)), wrapTop(dp(24)));
+        TextView panelHint = text(str(R.string.settings_panel_hint), 12, false, color(R.color.error_text));
+        LinearLayout.LayoutParams panelHintParams = wrapTop(dp(4));
+        panelHintParams.bottomMargin = dp(10);
+        sheet.addView(panelHint, panelHintParams);
+        sheet.addView(buildDisplayPanelRow(), matchTop(0));
+
         sheet.addView(divider(), matchTop(dp(22), dp(1)));
         sheet.addView(buildMotionRow(), matchTop(dp(18)));
 
@@ -246,6 +254,7 @@ final class SettingsSheet {
         refreshCustomSwatches();
         refreshPreview();
         refreshBackgroundSelection();
+        refreshDisplayPanelSelection();
         refreshDisplayModeSelection();
 
         scroll.addView(sheet, new ViewGroup.LayoutParams(
@@ -563,8 +572,62 @@ final class SettingsSheet {
         return grid;
     }
 
-    private void refreshBackgroundSelection() {
-        String active = ThemeManager.getBackground(activity);
+    /**
+     * OLED vs standard black level. Tapping either option re-themes the native
+     * chrome and pushes the choice into the bundled web app through the same
+     * bridge the rest of the appearance settings use, so both surfaces always
+     * agree.
+     */
+    private LinearLayout buildDisplayPanelRow() {
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+
+        String[] ids = {ThemeManager.PANEL_OLED, ThemeManager.PANEL_LCD};
+        int[] labels = {R.string.settings_panel_oled, R.string.settings_panel_standard};
+
+        for (int i = 0; i < ids.length; i++) {
+            final String panelId = ids[i];
+            TextView button = text(str(labels[i]), 13, true, color(R.color.chip_text));
+            button.setGravity(Gravity.CENTER);
+            button.setClickable(true);
+            button.setFocusable(true);
+            button.setForeground(ripple());
+            button.setPadding(dp(10), dp(12), dp(10), dp(12));
+
+            button.setOnClickListener(v -> {
+                ThemeManager.setDisplayPanel(activity, panelId);
+                refreshDisplayPanelSelection();
+                activity.applyDynamicAccent();
+            });
+            displayPanelButtons[i] = button;
+
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            if (i == 0) lp.rightMargin = dp(8);
+            row.addView(button, lp);
+        }
+        return row;
+    }
+
+    private void refreshDisplayPanelSelection() {
+        String active = ThemeManager.getDisplayPanel(activity);
+        String[] ids = {ThemeManager.PANEL_OLED, ThemeManager.PANEL_LCD};
+        for (int i = 0; i < ids.length; i++) {
+            boolean selected = ids[i].equals(active);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setCornerRadius(dp(14));
+            if (selected) {
+                bg.setColor((color(R.color.brand_a) & 0x00FFFFFF) | 0x33000000);
+                bg.setStroke(dp(1), color(R.color.brand_a));
+            } else {
+                bg.setColor(color(R.color.chip_bg));
+                bg.setStroke(dp(1), color(R.color.chip_stroke));
+            }
+            displayPanelButtons[i].setBackground(bg);
+        }
+    }
+
+    private void refreshBackgroundSelection() {        String active = ThemeManager.getBackground(activity);
         String[] ids = {
                 ThemeManager.BG_AURORA, ThemeManager.BG_MESH,
                 ThemeManager.BG_STARFIELD, ThemeManager.BG_NONE,

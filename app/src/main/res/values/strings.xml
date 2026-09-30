@@ -40,6 +40,11 @@
     <string name="settings_links_external_on">External links will open in your browser</string>
     <string name="settings_links_external_off">External links will open in-app</string>
 
+    <string name="settings_panel">Display panel</string>
+    <string name="settings_panel_hint">OLED uses a true-black canvas so the pixels switch off. Standard keeps dark greys, which scroll more smoothly on LCD screens.</string>
+    <string name="settings_panel_oled">OLED</string>
+    <string name="settings_panel_standard">Standard</string>
+
     <string name="settings_display_title">Display mode</string>
     <string name="settings_display_dark">Dark</string>
     <string name="settings_display_light">Light</string>

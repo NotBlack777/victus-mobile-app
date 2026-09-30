@@ -8,6 +8,13 @@ export type ThemePreset =
 
 export type ColorMode = 'dark' | 'light' | 'system';
 
+/**
+ * Physical panel type. OLED drives the canvas to true black so the pixels
+ * switch off; the standard mode keeps the lifted near-blacks that stay legible
+ * on LCD and avoid the smearing a pure-black scroll can produce.
+ */
+export type DisplayPanel = 'oled' | 'lcd';
+
 /** Animated backdrop drawn behind the app shell. */
 export type BackgroundStyle = 'aurora' | 'mesh' | 'starfield' | 'none';
 
@@ -20,6 +27,7 @@ export interface ThemeConfig {
   colorMode: ColorMode;
   openLinksExternally: boolean;
   background: BackgroundStyle;
+  panel: DisplayPanel;
 }
 
 export interface DockTab {

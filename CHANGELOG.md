@@ -1,5 +1,109 @@
 # Changelog
 
+## Victus Cloud 4.6.0 (the background actually animates, plus an OLED mode)
+
+`versionCode 48` / `versionName 4.6.0`. **Install this over 4.5.2.**
+
+### The background animation was running the whole time — and invisible
+
+This is the honest diagnosis, because it is not what it looked like. Every
+keyframe was live and playing from the first release. Nothing was broken,
+disabled, or frozen. The animation was simply **too faint to see**, so from the
+outside it was indistinguishable from a dead one.
+
+Measuring it instead of guessing: the build was screenshotted twice, 2.5 s
+apart, and the decoded pixels were compared.
+
+| | before | after |
+| --- | --- | --- |
+| aurora mean pixel change | **0.85** / 255 | **4.5** / 255 |
+| aurora peak | 35 | 77 |
+| share of screen in motion | 9.4% | 23.5% |
+
+A mean shift of 0.85/255 is roughly one-fifth of a single brightness step. No
+amount of waiting makes that read as motion.
+
+Why it was so faint:
+
+- The colour fields were 78% of the screen and parked at `-20% / -24%` offsets,
+  so the **bright core of every field sat off-screen** and only the faded tail
+  was ever on display.
+- Peak opacity was `0.32` over a near-black canvas, and the fields were painted
+  *over* that canvas rather than added to it.
+- Travel was 40% over 30 s, so the movement that did exist was imperceptibly slow.
+- The mesh grid was masked by an ellipse that peaked at 38% height and was fully
+  gone by 78% — the **bottom two-fifths of a tall phone had no grid at all**.
+- The starfield drew 26–72 sub-pixel dots drifting at under 0.1 px/frame.
+
+What changed:
+
+- Fields are now 150% of the viewport with their cores inside the visible area,
+  blended with `screen` so they read as emitted light rather than a translucent
+  film, with a multi-stop falloff that needs no `filter: blur()`.
+- Faster, further travel on a four-point path, so the loop never dwells in one
+  place.
+- The mesh gained an 11px minor lattice, a travelling highlight sweep, and a mask
+  that covers a tall phone.
+- The starfield is denser, twinkles, and has a few bright anchor stars with halos
+  for depth.
+
+Also fixed here: **reduced motion was strobing, not freezing.** It set
+`animation-duration: 0.01s` but left the iteration count infinite, so looping
+animations re-ran ~100x a second and flickered instead of holding still.
+
+### OLED mode and standard mode
+
+A new **Display panel** setting, in both the web Appearance sheet and the native
+one:
+
+- **OLED** — the canvas drops to `#000000` so the pixels switch off entirely, the
+  always-on grid overlay is switched off (it would light the whole panel back up),
+  surfaces become translucent, and separation between layers comes from borders
+  and text contrast rather than from lifting grey. It is applied as a transform
+  on top of whichever theme is active, so all five presets plus custom palettes
+  get an OLED variant for free.
+- **Standard** — the existing lifted near-blacks, which scroll more smoothly on
+  LCD panels and do not smear.
+
+The choice is stored natively, mirrored to the web app over the existing
+`victus:theme` bridge, and applied live without an activity restart.
+
+OLED is deliberately **inert in light mode**. Applying true black under light
+text would be unreadable, so the stored preference is simply left in place and
+takes effect the moment you switch back to Dark. That rule is pinned by tests on
+both sides, because getting it wrong is silent and severe.
+
+### UI
+
+- Home cards are now translucent, derived from whatever the active theme painted
+  into `--panel`. They were fully opaque, which hid the animated backdrop behind
+  them almost everywhere — a large part of why the background looked dead.
+- Stronger borders in OLED mode so layered surfaces stay readable on true black.
+
+### Proving it
+
+Two new checks, both wired to fail loudly in CI:
+
+- `node scripts/verify-backdrop.mjs` — screenshots the built app and grades real
+  pixel movement per style, with per-style budgets. The starfield is graded on
+  peak and coverage rather than mean, because a starfield is *supposed* to be
+  mostly black and a mean-delta budget would push it toward fog.
+- `tests/backdrop.test.ts` — pins the values behind those numbers so they cannot
+  quietly drift back to invisible.
+
+The OLED/light-mode bug above was found by that runtime check, not by reading
+the code — the token layer was already correct and the CSS class was not.
+
+Playwright moved from an ad-hoc symlink to a real dev dependency so the check can
+run on a clean runner. The web unit tests are now part of CI as well.
+
+### Verified
+
+tsc clean · 123 web tests · 108 JVM tests · gradle `BUILD SUCCESSFUL` with
+`checkNoShrinking: OK` · 52/52 headless WebView checks · panel contract check
+PASS · backdrop check PASS (all three styles) · OLED true-black in dark and inert
+in light. Shrinking remains off for both build types, permanently.
+
 ## Victus Cloud 4.5.2 (fix the instant-launch crash — shrinking is now off, permanently)
 
 `versionCode 47` / `versionName 4.5.2`. **Install this over 4.5.1.**

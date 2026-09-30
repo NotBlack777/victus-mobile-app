@@ -877,6 +877,7 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
                 + "reduceMotion:" + reduceMotion + ","
                 + "colorMode:'" + ThemeManager.getColorMode(this) + "',"
                 + "background:'" + ThemeManager.getBackground(this) + "',"
+                + "panel:'" + ThemeManager.getDisplayPanel(this) + "',"
                 + "isDark:" + ThemeManager.isDark(this)
                 + "}}));"
                 + "})();";

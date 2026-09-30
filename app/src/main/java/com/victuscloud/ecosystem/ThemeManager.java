@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.os.Build;
 import android.provider.Settings;
 
 /**
@@ -73,6 +74,7 @@ final class ThemeManager {
     private static final String KEY_REDUCE_MOTION = "reduce_motion";
     private static final String KEY_COLOR_MODE = "color_mode";
     private static final String KEY_BACKGROUND = "background";
+    private static final String KEY_DISPLAY_PANEL = "display_panel";
     private static final String KEY_OPEN_LINKS_EXTERNALLY = "open_links_externally";
 
     private ThemeManager() {
@@ -229,6 +231,71 @@ final class ThemeManager {
 
     static void setBackground(Context c, String background) {
         prefs(c).edit().putString(KEY_BACKGROUND, background).apply();
+    }
+
+    // ---------------------------------------------------------- display panel
+
+    static final String PANEL_OLED = "oled";
+    static final String PANEL_LCD = "lcd";
+
+    /**
+     * Whether the user asked for a true-black (OLED) canvas or the standard
+     * lifted greys. Anything unrecognised falls back to the standard panel,
+     * which is also the safe default: a corrupt or older value must never
+     * leave the app painting pure black over unreadable content.
+     */
+    static String getDisplayPanel(Context c) {
+        String panel = prefs(c).getString(KEY_DISPLAY_PANEL, PANEL_LCD);
+        return PANEL_OLED.equals(panel) ? PANEL_OLED : PANEL_LCD;
+    }
+
+    static void setDisplayPanel(Context c, String panel) {
+        prefs(c).edit().putString(KEY_DISPLAY_PANEL, getDisplayPanelOrDefault(panel)).apply();
+    }
+
+    private static String getDisplayPanelOrDefault(String panel) {
+        return PANEL_OLED.equals(panel) ? PANEL_OLED : PANEL_LCD;
+    }
+
+    /**
+     * Whether OLED black level should actually be applied right now. It is a
+     * dark-panel setting, so it is inert while the app is in light mode — the
+     * same rule the web theme layer follows, and the reason a stored OLED
+     * preference survives a trip through light mode instead of painting a black
+     * canvas under light text.
+     */
+    static boolean isOledActive(Context c) {
+        return isOledPanel(getDisplayPanel(c), isDark(c));
+    }
+
+    /** Pure form of {@link #isOledActive(Context)}, split out so it is testable. */
+    static boolean isOledPanel(String panel, boolean isDark) {
+        return PANEL_OLED.equals(panel) && isDark;
+    }
+
+    /** Normalises an unrecognised or missing value to the safe standard panel. */
+    static String normalizePanel(String panel) {
+        return getDisplayPanelOrDefault(panel);
+    }
+
+    /**
+     * Black level for the native surfaces. OLED goes to true black so the panel
+     * pixels switch off; the standard panel keeps a dark grey that does not
+     * smear when scrolled on an LCD.
+     */
+    static int windowBackground(Context c) {
+        return isOledActive(c) ? 0xFF000000 : color(c, R.color.window_bg);
+    }
+
+    /**
+     * Resolves a themed colour resource, so the values-night overrides are
+     * honoured instead of being hardcoded here.
+     */
+    static int color(Context c, int resId) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            return c.getResources().getColor(resId, c.getTheme());
+        }
+        return c.getResources().getColor(resId);
     }
 
     // ------------------------------------------------------- external links
