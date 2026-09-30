@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Mail,
   Lock,
@@ -18,6 +18,8 @@ import { useAuth } from '../context/AuthContext.tsx';
 import { useToast } from './Toast.tsx';
 import { BackgroundFX } from './BackgroundFX.tsx';
 import { ACCOUNT_SIGNUP_URL, API_CREDENTIALS_URL } from '../services/authService.ts';
+import { totpWindowState } from '../services/victusBridge.ts';
+import { useTheme } from '../context/ThemeContext.tsx';
 
 type Mode = 'signin' | 'twofactor' | 'apikey';
 
@@ -35,6 +37,7 @@ export const LoginScreen: React.FC = () => {
   const { signIn, verifyTwoFactor, signInWithApiKey, signInDemo, requestPasswordReset, realAuthAvailable } =
     useAuth();
   const { showToast } = useToast();
+  const { config } = useTheme();
 
   const [mode, setMode] = useState<Mode>('signin');
   const [email, setEmail] = useState('');
@@ -51,6 +54,44 @@ export const LoginScreen: React.FC = () => {
     setErrorMessage(null);
     setInfoMessage(null);
   };
+
+  /**
+   * The authenticator's 30-second window, on the PANEL's clock.
+   *
+   * <p>An authenticator code is derived from a 30-second step of the server's
+   * clock, so a code read off the screen in the last seconds of its window is
+   * already stale by the time it is typed — and a phone whose clock has drifted
+   * produces codes the panel rejects outright. The shell reports the real
+   * remaining seconds (measured from the panel's own {@code Date} header), and
+   * this ring simply counts them down and re-reads at each boundary. No spinner,
+   * no message, no flicker: when the ring refills, the next code is already valid
+   * and nothing needs to be re-submitted.</p>
+   */
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const [windowSynced, setWindowSynced] = useState(false);
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (mode !== 'twofactor') return;
+    let cancelled = false;
+
+    const read = () => {
+      if (cancelled) return;
+      const state = totpWindowState();
+      setSecondsLeft(state.secondsRemaining);
+      setWindowSynced(state.synced);
+      // Re-read just after the boundary so the displayed value is the server's,
+      // never a locally extrapolated guess that could drift across a step.
+      const delay = Math.max(250, state.millisUntilNext || 1000);
+      timerRef.current = window.setTimeout(read, delay);
+    };
+    read();
+
+    return () => {
+      cancelled = true;
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    };
+  }, [mode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,6 +118,7 @@ export const LoginScreen: React.FC = () => {
         } else {
           showToast('Signed in to Victus Cloud');
         }
+        setCode('');
       } else {
         const { error } = await signInWithApiKey(apiKey);
         if (error) {
@@ -308,9 +350,47 @@ export const LoginScreen: React.FC = () => {
                     disabled={isLoading}
                     className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-[#161622] border border-white/[0.08] text-white text-xs tracking-[0.3em] placeholder:tracking-normal placeholder:text-slate-500 focus:outline-none focus:border-violet-500 transition-colors"
                   />
+                  {/* Silent 30-second ring, aligned to the panel's clock. */}
+                  <span
+                    className="absolute right-3 w-5 h-5 flex items-center justify-center flex-shrink-0"
+                    aria-hidden="true"
+                  >
+                    <svg viewBox="0 0 36 36" className="w-5 h-5 -rotate-90">
+                      <circle
+                        cx="18"
+                        cy="18"
+                        r="15.5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        className="text-white/10"
+                      />
+                      <circle
+                        cx="18"
+                        cy="18"
+                        r="15.5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeDasharray={`${(secondsLeft ?? 30) * (2 * Math.PI * 15.5) / 30} ${
+                          2 * Math.PI * 15.5
+                        }`}
+                        className={`text-violet-400 ${
+                          config.reduceMotion ? '' : 'transition-[stroke-dasharray] duration-1000 ease-linear'
+                        }`}
+                      />
+                    </svg>
+                  </span>
                 </div>
                 <p className="text-[10px] text-slate-500 mt-1.5">
                   Six digits from your authenticator app, or one of your recovery codes.
+                  {secondsLeft !== null && (
+                    <span className="text-violet-400/90">
+                      {' '}New code in {secondsLeft}s
+                      {!windowSynced ? ' (device clock)' : ''}.
+                    </span>
+                  )}
                 </p>
               </div>
             )}

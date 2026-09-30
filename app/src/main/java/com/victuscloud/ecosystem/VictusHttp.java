@@ -43,12 +43,25 @@ final class VictusHttp {
         final String body;
         final Map<String, String> cookies;
         final String failure;
+        /**
+         * The panel's own clock, from the response's {@code Date} header, as epoch
+         * millis; -1 when the header was absent or unparseable. Every ordinary HTTP
+         * response carries it, so this is a free, exact sample of server time — the
+         * only trustworthy clock an authenticator code can be aligned to.
+         */
+        final long serverDateMillis;
 
         Response(int status, String body, Map<String, String> cookies, String failure) {
+            this(status, body, cookies, failure, -1L);
+        }
+
+        Response(int status, String body, Map<String, String> cookies, String failure,
+                 long serverDateMillis) {
             this.status = status;
             this.body = body == null ? "" : body;
             this.cookies = cookies == null ? new LinkedHashMap<>() : cookies;
             this.failure = failure;
+            this.serverDateMillis = serverDateMillis;
         }
 
         boolean isNetworkFailure() {
@@ -69,6 +82,15 @@ final class VictusHttp {
 
     boolean hasCookies() {
         return !cookies.isEmpty();
+    }
+
+    /**
+     * One cookie's value, or null. Used to read the {@code XSRF-TOKEN} the way the
+     * panel's own frontend does — after the password POST the session has been
+     * regenerated, so this cookie is the only CSRF source that is still current.
+     */
+    String cookie(String name) {
+        return name == null ? null : cookies.get(name);
     }
 
     Response get(String path) {
@@ -176,16 +198,17 @@ final class VictusHttp {
 
             int status = conn.getResponseCode();
             if (useCookies) storeCookies(conn.getHeaderFields());
+            long serverDate = TotpWindow.parseHttpDate(conn.getHeaderField("Date"));
 
             // 4xx/5xx bodies carry the panel's explanation, so read both streams.
             InputStream stream = status >= 400 ? conn.getErrorStream() : conn.getInputStream();
             String body = stream == null ? "" : readAll(stream);
-            return new Response(status, body, new LinkedHashMap<>(cookies), null);
+            return new Response(status, body, new LinkedHashMap<>(cookies), null, serverDate);
         } catch (Exception failure) {
             String reason = failure.getMessage() == null
                     ? failure.getClass().getSimpleName()
                     : failure.getMessage();
-            return new Response(0, "", new LinkedHashMap<>(cookies), reason);
+            return new Response(0, "", new LinkedHashMap<>(cookies), reason, -1L);
         } finally {
             if (conn != null) conn.disconnect();
         }

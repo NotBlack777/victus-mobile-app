@@ -74,6 +74,7 @@ echo "→ compiling the shipped network code with the check tool"
 "$JAVAC" -encoding UTF-8 -cp "$JSON_JAR" -d "$CLASSES" \
   "$ROOT/app/src/main/java/com/victuscloud/ecosystem/VictusApi.java" \
   "$ROOT/app/src/main/java/com/victuscloud/ecosystem/VictusHttp.java" \
+  "$ROOT/app/src/main/java/com/victuscloud/ecosystem/TotpWindow.java" \
   "$ROOT/tools/panel-check/MockPanel.java" \
   "$ROOT/tools/panel-check/PanelCheck.java"
 

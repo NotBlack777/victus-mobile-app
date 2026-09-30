@@ -53,6 +53,20 @@ final class VictusAuth {
     private final VictusHttp http = new VictusHttp();
     private final SecureStore store;
 
+    /**
+     * The panel's 30-second authenticator window, measured against server time.
+     * Fed from the {@code Date} header of every response, so a phone with a wrong
+     * clock still shows the user exactly when the current code rolls over.
+     */
+    private final TotpWindow totpWindow = new TotpWindow();
+
+    /** How close to the boundary a rejection still counts as "just rotated". */
+    private static final int TOTP_ROTATION_GRACE_SECONDS = 4;
+
+    private static boolean isRotating(TotpWindow window, int graceSeconds) {
+        return window != null && window.isRotating(System.currentTimeMillis(), graceSeconds);
+    }
+
     private Session session;
 
     VictusAuth(Context context) {
@@ -280,18 +294,31 @@ final class VictusAuth {
         if (confirmationToken == null || confirmationToken.trim().isEmpty()) {
             return Outcome.failed("The sign-in attempt expired. Please sign in again.", 400);
         }
-        if (!VictusApi.looksLikeTotpOrRecoveryCode(authenticationCode)) {
-            return Outcome.failed("Enter the 6-digit code from your authenticator app.", 400);
+
+        // Normalise first: "123 456" (what most authenticator apps show, and what
+        // Android's OTP autofill inserts) is the same code as "123456".
+        String code = VictusApi.normaliseTwoFactorCode(authenticationCode);
+        VictusApi.TwoFactorKind kind = VictusApi.classifyTwoFactor(code);
+        if (kind == VictusApi.TwoFactorKind.UNKNOWN) {
+            return Outcome.failed("Enter the 6-digit code from your authenticator app, "
+                    + "or one of your recovery codes.", 400);
         }
 
-        VictusHttp.Response response = postWithCsrf(VictusApi.PATH_LOGIN_CHECKPOINT,
-                VictusApi.checkpointBody(confirmationToken, authenticationCode));
+        String body = VictusApi.checkpointBody(confirmationToken, code, kind);
+        VictusHttp.Response response = postWithCsrf(VictusApi.PATH_LOGIN_CHECKPOINT, body);
         if (response == null) return Outcome.failed(CSRF_HANDSHAKE_FAILED, 0);
         if (response.isNetworkFailure()) return Outcome.failed(networkMessage(response), 0);
 
         VictusApi.LoginResult result = VictusApi.parseLogin(response.status, response.body);
         if (result.state == VictusApi.LoginResult.State.SESSION_READY) return finishSignIn();
         if (result.state == VictusApi.LoginResult.State.FAILED) {
+            // A code entered in the last seconds of its window has already rotated
+            // by the time the request lands. That is not a wrong code, so say so
+            // instead of letting the panel's generic "invalid code" stand.
+            if (isRotating(totpWindow, TOTP_ROTATION_GRACE_SECONDS)) {
+                return Outcome.failed("That code has just rolled over. Use the new code now "
+                        + "showing in your authenticator.", response.status);
+            }
             return Outcome.failed(result.detail, response.status);
         }
         return Outcome.failed("That code wasn't accepted. Try the next one from your app.", 401);
@@ -611,12 +638,61 @@ final class VictusAuth {
         String csrfToken = fetchCsrfToken();
         if (csrfToken == null) return null;
 
-        VictusHttp.Response response = http.post(path, jsonBody, csrfToken);
+        VictusHttp.Response response = observe(http.post(path, jsonBody, csrfToken));
         if (VictusApi.isCsrfFailure(response.status, response.body)) {
-            String refreshed = fetchCsrfToken();
-            if (refreshed != null) response = http.post(path, jsonBody, refreshed);
+            // Laravel rotates the token when the session is regenerated, which
+            // happens on the password POST that precedes the two-factor step. Re-seed
+            // from /sanctum/csrf-cookie — the same call the panel's own frontend
+            // makes — and try once more with the fresh token.
+            String refreshed = reseedCsrfCookie();
+            if (refreshed != null) response = observe(http.post(path, jsonBody, refreshed));
         }
         return response;
+    }
+
+    /**
+     * Folds a response's {@code Date} header into the server-time offset.
+     *
+     * <p>Every HTTP response carries it, so this keeps the authenticator window
+     * aligned with the panel for free — no extra request, no polling, and nothing
+     * about the account or the code involved.</p>
+     */
+    private VictusHttp.Response observe(VictusHttp.Response response) {
+        if (response != null && response.serverDateMillis > 0L) {
+            totpWindow.observe(System.currentTimeMillis(), response.serverDateMillis);
+        }
+        return response;
+    }
+
+    /**
+     * The authenticator window as the sign-in screen needs it: seconds left before
+     * the code rotates, measured on the server's clock.
+     */
+    String totpStateJson() {
+        long now = System.currentTimeMillis();
+        org.json.JSONObject json = new org.json.JSONObject();
+        try {
+            json.put("secondsRemaining", totpWindow.secondsRemaining(now));
+            json.put("millisUntilNext", totpWindow.millisUntilNextWindow(now));
+            json.put("periodSeconds", TotpWindow.PERIOD_SECONDS);
+            json.put("synced", totpWindow.isSynced());
+            json.put("offsetMillis", totpWindow.offsetMillis());
+        } catch (Exception impossible) {
+            // JSONObject.put only rejects a null key.
+        }
+        return json.toString();
+    }
+
+    /**
+     * Takes a fresh CSRF token the way the panel's own SPA does:
+     * {@code GET /sanctum/csrf-cookie} sets {@code XSRF-TOKEN} on the session, and
+     * that cookie's value is what gets echoed back as the header.
+     */
+    private String reseedCsrfCookie() {
+        http.get("/sanctum/csrf-cookie");
+        String cookie = http.cookie("XSRF-TOKEN");
+        if (cookie != null && !cookie.trim().isEmpty()) return cookie;
+        return fetchCsrfToken();
     }
 
     private VictusHttp.Response getWithBearer(String path, String identifier, String secret) {
@@ -633,14 +709,20 @@ final class VictusAuth {
      * header is derived from, so both routes are tried.
      */
     private String fetchCsrfToken() {
-        VictusHttp.Response loginPage = http.get(VictusApi.PATH_LOGIN);
+        // The cookie the panel's own frontend sends is authoritative and survives
+        // the session regeneration that follows a successful password POST; the
+        // login page's meta tag is only a fallback for a brand-new jar.
+        String cookie = http.cookie("XSRF-TOKEN");
+        if (cookie != null && !cookie.trim().isEmpty()) return cookie;
+
+        VictusHttp.Response loginPage = observe(http.get(VictusApi.PATH_LOGIN));
         if (!loginPage.isNetworkFailure()) {
             String token = VictusApi.csrfTokenFromHtml(loginPage.body);
             if (token != null) return token;
         }
-        VictusHttp.Response csrfCookie = http.get("/sanctum/csrf-cookie");
+        VictusHttp.Response csrfCookie = observe(http.get("/sanctum/csrf-cookie"));
         if (csrfCookie.isNetworkFailure()) return null;
-        VictusHttp.Response retry = http.get(VictusApi.PATH_LOGIN);
+        VictusHttp.Response retry = observe(http.get(VictusApi.PATH_LOGIN));
         return retry.isNetworkFailure() ? null : VictusApi.csrfTokenFromHtml(retry.body);
     }
 

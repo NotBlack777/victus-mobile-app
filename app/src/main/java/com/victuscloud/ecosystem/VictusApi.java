@@ -65,6 +65,16 @@ final class VictusApi {
     /** Two-factor codes are six digits; recovery codes are longer and alphanumeric. */
     private static final int TOTP_LENGTH = 6;
 
+    /** What kind of second factor the user pasted. */
+    enum TwoFactorKind {
+        /** A six-digit TOTP code from an authenticator app. */
+        TOTP,
+        /** One of the panel's recovery codes (longer, may contain a dash). */
+        RECOVERY,
+        /** Neither: whitespace only, or something no authenticator could produce. */
+        UNKNOWN,
+    }
+
     private VictusApi() {
     }
 
@@ -143,10 +153,33 @@ final class VictusApi {
     }
 
     static String checkpointBody(String confirmationToken, String authenticationCode) {
+        return checkpointBody(confirmationToken, authenticationCode, classifyTwoFactor(authenticationCode));
+    }
+
+    /**
+     * Builds the checkpoint POST body.
+     *
+     * <p>The panel reads <em>two different fields</em> and validates them
+     * separately: {@code authentication_code} is checked as a TOTP code, and
+     * {@code recovery_token} is checked against the account's recovery-code hash.
+     * Sending a recovery code in {@code authentication_code} — which is exactly what
+     * an app that treats "any string" as a code does — can therefore only ever come
+     * back as "invalid code", no matter how correct the code was. Routing by shape
+     * is what makes a valid recovery code work.</p>
+     *
+     * <p>The TOTP path is unchanged: same field, same value, same one-step check on
+     * the panel. Nothing here widens what the panel accepts.</p>
+     */
+    static String checkpointBody(String confirmationToken, String code, TwoFactorKind kind) {
         JSONObject body = new JSONObject();
         try {
             body.put("confirmation_token", confirmationToken == null ? "" : confirmationToken);
-            body.put("authentication_code", authenticationCode == null ? "" : authenticationCode.trim());
+            String value = normaliseTwoFactorCode(code);
+            if (kind == TwoFactorKind.RECOVERY) {
+                body.put("recovery_token", value);
+            } else {
+                body.put("authentication_code", value);
+            }
         } catch (Exception impossible) {
             return "{}";
         }
@@ -522,15 +555,70 @@ final class VictusApi {
 
     /** Exposed for the unit tests that pin the six-digit two-factor rule. */
     static boolean looksLikeTotpOrRecoveryCode(String code) {
-        if (code == null) return false;
-        String trimmed = code.trim();
-        if (trimmed.isEmpty()) return false;
-        if (trimmed.length() <= TOTP_LENGTH) {
-            for (int i = 0; i < trimmed.length(); i++) {
-                if (!Character.isDigit(trimmed.charAt(i))) return false;
+        return classifyTwoFactor(code) != TwoFactorKind.UNKNOWN;
+    }/**
+     * Normalises what the user pasted: strips the spaces, dashes, tabs and newlines
+     * an authenticator or a copy-paste leaves behind.
+     *
+     * <p>Without this, "123 456" — which is what most authenticator apps display,
+     * and what Android's OTP autofill inserts — arrives at the panel with a space in
+     * the middle and is rejected as an invalid code even though it is correct.</p>
+     *
+     * <p>Letter case is deliberately preserved: the panel compares a recovery code
+     * case-sensitively, so uppercasing one here would turn a valid code into an
+     * invalid one.</p>
+     */
+    static String normaliseTwoFactorCode(String code) {
+        if (code == null) return "";
+        StringBuilder cleaned = new StringBuilder(code.length());
+        for (int i = 0; i < code.length(); i++) {
+            char c = code.charAt(i);
+            if (c == ' ' || c == '-' || c == '\t' || c == '\n' || c == '\r' || c == ' ') {
+                continue;
             }
-            return true;
+            cleaned.append(c);
         }
-        return trimmed.length() <= 64;
+        return cleaned.toString().trim();
+    }
+
+    /**
+     * Decides which panel field a pasted second factor belongs in.
+     *
+     * <p>Six digits (once spacing is removed) is a TOTP code. Anything else of a
+     * plausible length is treated as a recovery code and routed to
+     * {@code recovery_token}.</p>
+     */
+    static TwoFactorKind classifyTwoFactor(String code) {
+        String cleaned = normaliseTwoFactorCode(code);
+        if (cleaned.isEmpty()) return TwoFactorKind.UNKNOWN;
+        if (cleaned.length() == TOTP_LENGTH) {
+            boolean allDigits = true;
+            for (int i = 0; i < cleaned.length(); i++) {
+                if (!Character.isDigit(cleaned.charAt(i))) {
+                    allDigits = false;
+                    break;
+                }
+            }
+            if (allDigits) return TwoFactorKind.TOTP;
+            // Six characters that are not all digits is not a TOTP code, and it is
+            // too short to be a recovery code either — fall through so the length
+            // rule below decides, rather than guessing.
+        }
+        if (cleaned.length() <= 64 && allRecoveryCharacters(cleaned)) {
+            return TwoFactorKind.RECOVERY;
+        }
+        return TwoFactorKind.UNKNOWN;
+    }
+
+    /** Recovery codes are hex/alphanumeric; anything else was never a code. */
+    private static boolean allRecoveryCharacters(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            boolean allowed = (c >= '0' && c <= '9')
+                    || (c >= 'A' && c <= 'Z')
+                    || (c >= 'a' && c <= 'z');
+            if (!allowed) return false;
+        }
+        return value.length() >= 8;
     }
 }
