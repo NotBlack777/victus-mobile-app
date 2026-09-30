@@ -146,10 +146,11 @@ final class VictusWebViewClient extends WebViewClient {
     @Override
     public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
         if (!request.isForMainFrame()) return; // subresource failures don't justify an overlay
-        CharSequence description = error.getDescription();
+        // Say what actually happened: "no internet connection" is something a
+        // person can act on, where "net::ERR_INTERNET_DISCONNECTED" is not.
+        NetworkErrors.Kind kind = NetworkErrors.classify(error.getErrorCode());
         host.showError(
-                (description == null ? "" : description)
-                        + " (code " + error.getErrorCode() + ")",
+                host.context().getString(NetworkErrors.messageFor(kind)),
                 request.getUrl().toString());
     }
 
