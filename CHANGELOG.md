@@ -1,5 +1,31 @@
 # Changelog
 
+## Victus Cloud 4.5.1 (restore tap feedback, honest error messages)
+
+`versionCode 46` / `versionName 4.5.1`. Same work as 4.5.0 plus three fixes
+found while closing it out.
+
+- **Tap feedback was lost with the native chrome.** The shell fired
+  `HapticFeedbackConstants.KEYBOARD_TAP` from the dock chips and the Tools menu
+  rows, so removing that UI took the feedback with it. Restored on the single
+  web menu: `navigator.vibrate` through a new `src/utils/haptics.ts`, wired into
+  the channel chips, every drawer row (one capture-phase listener, not a dozen
+  hand-edited handlers), back, refresh, and the admin view-toggle. `VIBRATE` is
+  declared in the manifest — a normal permission, nothing is prompted for — and
+  every path is guarded, so a device with no vibrator or a browser without the
+  API ends in silence rather than an error.
+- **A failed page load said nothing useful.** `onReceivedError` showed the raw
+  platform code and `net::ERR_…` string. `NetworkErrors` (new, pure Java, unit
+  tested) classifies each code into offline / DNS / timeout / refused / TLS /
+  scheme / rate-limited, and the screen now says the plain thing — "No internet
+  connection", "The site took too long to answer" — which is something a person
+  can act on. Codes the app does not recognise fall through to a generic
+  sentence rather than being guessed at.
+- **Every resume fired a network round trip.** The silent admin-area probe now
+  runs on a 30-second floor, claimed atomically so a burst of resumes can only
+  ever queue one probe; a sign-in always bypasses the floor, because that is the
+  one moment the answer must be fresh.
+
 ## Victus Cloud 4.5.0 (one menu, role-aware admin areas, a working authenticator)
 
 `versionCode 45` / `versionName 4.5.0`.

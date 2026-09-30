@@ -1266,6 +1266,22 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
             new java.util.concurrent.atomic.AtomicReference<>(null);
 
     /**
+     * Never run two admin-area probes closer together than this.
+     *
+     * <p>{@link #onResume()} fires every time the user comes back to the app —
+     * unlocking the phone, returning from another app, rotating — and each call
+     * would otherwise be a network round trip. A role cannot realistically change
+     * faster than this, so a short floor keeps resume free while still reacting
+     * well within a session. A sign-in always bypasses the floor, because that is
+     * the one moment the answer genuinely must be fresh.</p>
+     */
+    private static final long ADMIN_AREA_CHECK_MIN_INTERVAL_MS = 30_000L;
+
+    /** When the last probe was queued, for the interval floor above. */
+    private final java.util.concurrent.atomic.AtomicLong lastAdminAreaCheck =
+            new java.util.concurrent.atomic.AtomicLong(0L);
+
+    /**
      * Silently re-checks which admin areas the signed-in account may use. Runs
      * on the serial auth thread, touches no UI, shows no spinner, logs nothing.
      * A failure (offline, panel busy) simply leaves the previous snapshot in
@@ -1278,11 +1294,29 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
      * account fetch; never touches the UI thread.
      */
     void startAdminAreaCheck() {
+        startAdminAreaCheck(false);
+    }
+
+    /**
+     * @param force skip the interval floor — used right after a sign-in, where the
+     *              account (and therefore the role) has just changed.
+     */
+    void startAdminAreaCheck(boolean force) {
         final VictusAuth auth = victusAuth;
         if (auth == null || !auth.isSignedIn()) {
             adminAreas.set(new AdminAreaState(new String[0]));
             return;
         }
+
+        long now = System.currentTimeMillis();
+        long previous = lastAdminAreaCheck.get();
+        if (!force && previous > 0L && now - previous < ADMIN_AREA_CHECK_MIN_INTERVAL_MS) {
+            return;
+        }
+        // Claim the slot before the thread starts, so a burst of resumes can only
+        // ever queue one probe rather than one per resume.
+        if (!lastAdminAreaCheck.compareAndSet(previous, now)) return;
+
         authIo.execute(() -> {
             VictusHttp.Response account = auth.apiGet(VictusApi.PATH_ACCOUNT);
             VictusApi.Account parsed = VictusApi.parseAccount(account.body);
@@ -1765,7 +1799,7 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
             // A fresh session may carry a different role: probe the admin areas
             // once, in the background, before handing the reply to the page.
             if (payload.contains("\"state\":\"signed_in\"")) {
-                startAdminAreaCheck();
+                startAdminAreaCheck(true);
             }
             deliverAuthResult(callbackId, payload);
         });
