@@ -703,15 +703,59 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
 
         final android.content.Context appContext = getApplicationContext();
         UpdateChecker.IO.execute(() -> {
+            final UpdateManifest found;
             try {
-                UpdateChecker.rememberAvailable(appContext, UpdateChecker.checkForUpdate(appContext));
+                found = UpdateChecker.checkForUpdate(appContext);
+                UpdateChecker.rememberAvailable(appContext, found);
             } catch (Exception unreachable) {
                 // Offline / rate-limited: keep whatever the last check knew.
                 return;
             }
-            UpdateChecker.MAIN.post(this::refreshUpdateUi);
+            UpdateChecker.MAIN.post(() -> {
+                refreshUpdateUi();
+                maybePromptForUpdate(found);
+            });
         });
     }
+
+    /**
+     * Offers a newly published build, once, without being asked to.
+     *
+     * <p>The release feed already tells every installed copy that a newer build
+     * exists; until now only a badge in the tools menu acted on it, so a phone
+     * that never opened that menu stayed on an old build indefinitely — exactly
+     * the failure this prompt exists to prevent. The offer is made at most once
+     * per build ({@link UpdateChecker#shouldAutoPrompt}), and never while a
+     * sheet is already up, so it cannot stack a second dialog on the first.</p>
+     */
+    private void maybePromptForUpdate(UpdateManifest found) {
+        if (isFinishing() || isDestroyed()) return;
+        if (found == null) return;
+        if (pendingUpdateSheet || isFinishing()) return;
+        if (updateSheetShowing()) return;
+        if (!UpdateChecker.shouldAutoPrompt(this, found)) return;
+
+        UpdateChecker.markPrompted(this, found);
+        // Posted, not shown inline: the check finishes while the launch frame is
+        // still settling, and a dialog attached to an unpainted window throws.
+        webView.postDelayed(() -> {
+            if (isFinishing() || isDestroyed()) return;
+            if (updateSheetShowing()) return;
+            UpdateSheet.show(this);
+        }, UPDATE_PROMPT_DELAY_MS);
+    }
+
+    /**
+     * True while an update sheet is on screen. The sheet owns its own dialog, so
+     * this asks it rather than tracking a flag that two entry points (the menu
+     * and this prompt) could disagree about.
+     */
+    private boolean updateSheetShowing() {
+        return UpdateSheet.isShowing();
+    }
+
+    /** Quiet delay before an automatic update offer, so it lands after launch settles. */
+    private static final long UPDATE_PROMPT_DELAY_MS = 1_500L;
 
     /**
      * Re-reads whatever the last background update check found.

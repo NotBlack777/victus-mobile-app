@@ -55,6 +55,15 @@ final class UpdateChecker {
     private static final String KEY_LAST_CHECK = "last_check_at";
 
     /**
+     * The {@code versionCode} the user was last shown the update prompt for.
+     *
+     * <p>The prompt is automatic, so it needs exactly one rule to stay civil:
+     * ask once per new build. Asking on every launch would be nagging, and
+     * asking again for a build the user already declined would be worse.</p>
+     */
+    private static final String KEY_PROMPTED_CODE = "prompted_version_code";
+
+    /**
      * Relaunching the app shouldn't re-hit the update source every time, so a
      * launch check is skipped when one already ran within this window. A manual
      * "Check for updates" always runs regardless.
@@ -293,9 +302,41 @@ final class UpdateChecker {
         return System.currentTimeMillis() - last < CHECK_THROTTLE_MS;
     }
 
+    /**
+     * True when a background check just found a build worth interrupting for and
+     * the user has not already been asked about that exact build.
+     *
+     * <p>Checked and recorded together on the UI thread (see
+     * {@link #markPrompted}) so two racing checks cannot both decide to prompt —
+     * a double dialog on launch is exactly the kind of thing that makes people
+     * disable an app.</p>
+     */
+    static boolean shouldAutoPrompt(Context context, UpdateManifest manifest) {
+        if (manifest == null) return false;
+        if (manifest.versionCode <= 0) return false;
+        return prefs(context).getInt(KEY_PROMPTED_CODE, -1) != manifest.versionCode;
+    }
+
+    /** Records that the prompt for this build has been shown, so it is shown once. */
+    static void markPrompted(Context context, UpdateManifest manifest) {
+        if (manifest == null) return;
+        prefs(context).edit().putInt(KEY_PROMPTED_CODE, manifest.versionCode).apply();
+    }
+
+    /** Forgets the prompt record, so a downgraded-then-upgraded build asks again. */
+    static void forgetPrompt(Context context) {
+        prefs(context).edit().remove(KEY_PROMPTED_CODE).apply();
+    }
+
     /** Drops the cached availability (used after an update is installed). */
     static void forgetAvailability(Context context) {
-        prefs(context).edit().remove(KEY_AVAILABLE_VERSION).remove(KEY_AVAILABLE_CODE).apply();
+        prefs(context).edit()
+                .remove(KEY_AVAILABLE_VERSION)
+                .remove(KEY_AVAILABLE_CODE)
+                // The prompt is recorded per build; clearing it alongside means a
+                // reinstall of the same build can still offer itself once.
+                .remove(KEY_PROMPTED_CODE)
+                .apply();
     }
 
     // ------------------------------------------------------------------ files

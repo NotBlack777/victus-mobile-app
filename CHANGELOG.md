@@ -1,5 +1,35 @@
 # Changelog
 
+## Victus Cloud 4.6.5 (new releases now offer themselves)
+
+`versionCode 53` / `versionName 4.6.5`. **Install this over 4.6.4.**
+
+### Added
+
+**Automatic update prompt.** The app already polled the GitHub release feed on
+launch, deliberately "quietly ... and never prompts": the only signal a phone
+got was a badge buried in the tools menu. A user who never opened that menu
+stayed on an old build indefinitely, which defeats the point of publishing a
+release at all. When the background check finds a genuinely newer build, the
+update sheet now offers itself once, a moment after launch.
+
+It is offered **once per build**, never twice, and never on top of a sheet the
+user already opened. A newer release is a new decision and is offered again;
+reinstalling the same build can offer it again. Covered by seven new tests
+(`UpdatePromptTest`).
+
+Tagging a release already publishes the signed APK to the GitHub Release, which
+is what the updater reads — no workflow change was needed.
+
+### Not in this release
+
+Empty server console and details, a sidebar that does not update, Victus Drive
+not listing real uploads, billing not listing real invoices, notifications not
+listing real ones, and the missing profile / account-settings / reseller-API
+pages. Every one of those reads the signed-in account from the control panel, so
+all of them stand or fall together with sign-in. They are being worked as one
+problem rather than patched one symptom at a time.
+
 ## Victus Cloud 4.6.4 (the real cause of "nothing scrolls")
 
 `versionCode 52` / `versionName 4.6.4`. **Install this over 4.6.3.**
