@@ -883,8 +883,10 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
                 }
                 break;
             }
-            case ToolsMenu.TOOL_TEST_PANEL: // test (beta) panel
-                loadUrlInternal("https://testpanel.victuscloud.com");
+            case ToolsMenu.TOOL_TEST_PANEL:
+                // testpanel.victuscloud.com no longer resolves (NXDOMAIN since the
+                // .xyz → .com migration); send people to the knowledgebase instead.
+                loadUrlInternal("https://victuscloud.com/knowledgebase");
                 break;
             case ToolsMenu.TOOL_SUPPORT:
                 loadTab(5); // Support

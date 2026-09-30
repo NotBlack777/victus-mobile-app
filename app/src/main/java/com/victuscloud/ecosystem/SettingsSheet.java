@@ -707,7 +707,15 @@ final class SettingsSheet {
             button.setOnClickListener(v -> {
                 boolean recreate = ThemeManager.setColorModeAndCompare(activity, mode);
                 refreshDisplayModeSelection();
-                if (recreate) activity.recreateForColorMode();
+                if (recreate) {
+                    // The theme change restarts the activity. This Dialog belongs
+                    // to the dying one — dismiss it first or Android logs
+                    // "Activity has leaked window" and the sheet outlives its
+                    // context.
+                    dialog.dismiss();
+                    activity.recreateForColorMode();
+                    return;
+                }
             });
             displayModeButtons[i] = button;
             row.addView(button, weightWithEndMargin(i < modes.length - 1 ? dp(8) : 0));
@@ -764,6 +772,7 @@ final class SettingsSheet {
             refreshPreview();
             activity.applyDynamicAccent();
             if (wasLight != !ThemeManager.isDark(activity)) {
+                dialog.dismiss(); // same leak guard as the display-mode buttons
                 activity.recreateForColorMode(); // default is dark
             }
             Toast.makeText(activity, R.string.settings_reset_done, Toast.LENGTH_SHORT).show();

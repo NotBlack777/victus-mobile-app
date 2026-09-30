@@ -1,5 +1,33 @@
 # Changelog
 
+## Victus Cloud 2.5.0 (codebase audit: crash-adjacent and data-loss fixes)
+
+- **Dark/light start-up flicker** — the bundled page always rendered dark on
+  first paint even for light-mode users (the `.dark` class was applied only in
+  React effects). A tiny pre-render script in `index.html` now applies the
+  saved color mode to `<html>` before the first paint.
+- **Truncated downloads reported as success** — when the connection dropped
+  mid-body, `DownloadTask` copied whatever it had and called it done: the
+  truncated file stayed visible in `Downloads/VictusCloud` and the toast said
+  "Download complete". `copy()` now counts bytes, each writer verifies the
+  count against `Content-Length` when the server sends one, and a short body
+  fails the download and deletes the partial file. `onSuccess` also reports the
+  final (de-duplicated) filename instead of the pre-dedupe name.
+- **Native Settings sheet leaked its window across a theme change** — picking
+  Dark/Light/System (or tapping Reset) called `recreate()` while the sheet's
+  `Dialog` was showing: Android logged "Activity has leaked window" and the
+  sheet briefly outlived its (destroyed) context. The sheet now dismisses
+  itself before the activity recreates.
+- **Dead "Open test panel" Tools entry** — `testpanel.victuscloud.com` has
+  returned NXDOMAIN since the `.xyz` → `.com` migration (verified by DNS), so
+  the menu item loaded a native error screen. The entry now opens the
+  knowledgebase; relabelled to match.
+- **Stray navigation/progress timers in the web app** — overlapping
+  navigations in `App.tsx` left timers from the previous run alive (bar could
+  re-appear after settling), timers survived unmount, and the simulated chat
+  reply in `FloatingChatBubble` could fire after unmount. Both now cancel their
+  timers.
+
 ## Unreleased — verified against the live panel
 
 **Proven live on `control.victuscloud.com`** (a 10-server real fleet, account

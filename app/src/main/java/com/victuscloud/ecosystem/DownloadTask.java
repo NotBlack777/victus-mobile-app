@@ -57,22 +57,26 @@ final class DownloadTask {
                         String userAgent, Callback callback) {
         Context app = context.getApplicationContext();
         EXECUTOR.execute(() -> {
+            String saved = null;
             String reason = null;
             try {
-                download(app, url, fileName, mimeType, userAgent);
+                saved = download(app, url, fileName, mimeType, userAgent);
             } catch (Exception e) {
                 reason = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             }
+            final String done = saved;
             final String failure = reason;
             MAIN.post(() -> {
-                if (failure == null) callback.onSuccess(fileName);
+                // Report the name the file actually landed under — uniqueName()
+                // may have suffixed " (1)" to avoid clobbering an older file.
+                if (failure == null) callback.onSuccess(done != null ? done : fileName);
                 else callback.onFailure(failure);
             });
         });
     }
 
-    private static void download(Context context, String url, String fileName, String mimeType,
-                                 String userAgent) throws Exception {
+    private static String download(Context context, String url, String fileName, String mimeType,
+                                   String userAgent) throws Exception {
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
         try {
             conn.setInstanceFollowRedirects(true);
@@ -87,13 +91,16 @@ final class DownloadTask {
             int status = conn.getResponseCode();
             if (status >= 400) throw new Exception("HTTP " + status);
 
+            // Declared body size when the server sends one. A connection that
+            // dies mid-body can hit EOF "cleanly" without throwing, so the byte
+            // count is the only reliable way to catch a truncated download.
+            long expected = conn.getContentLengthLong();
+
             String type = normalizeMime(mimeType, conn.getContentType());
             try (InputStream in = new BufferedInputStream(conn.getInputStream())) {
-                if (Build.VERSION.SDK_INT >= 29) {
-                    writeViaMediaStore(context, in, fileName, type);
-                } else {
-                    writeLegacy(context, in, fileName);
-                }
+                return Build.VERSION.SDK_INT >= 29
+                        ? writeViaMediaStore(context, in, fileName, type, expected)
+                        : writeLegacy(context, in, fileName, expected);
             }
         } finally {
             conn.disconnect();
@@ -102,8 +109,9 @@ final class DownloadTask {
 
     // ------------------------------------------------------------- API 29+
 
-    private static void writeViaMediaStore(Context context, InputStream in,
-                                           String fileName, String mimeType) throws Exception {
+    private static String writeViaMediaStore(Context context, InputStream in,
+                                             String fileName, String mimeType,
+                                             long expectedBytes) throws Exception {
         ContentResolver resolver = context.getContentResolver();
         String unique = uniqueName(resolver, fileName);
 
@@ -120,7 +128,11 @@ final class DownloadTask {
         boolean ok = false;
         try (OutputStream out = resolver.openOutputStream(item)) {
             if (out == null) throw new Exception("Cannot open destination");
-            copy(in, out);
+            long written = copy(in, out);
+            if (expectedBytes > 0 && written != expectedBytes) {
+                throw new Exception("Incomplete download (" + written
+                        + " of " + expectedBytes + " bytes)");
+            }
             ok = true;
         } finally {
             if (ok) {
@@ -131,6 +143,7 @@ final class DownloadTask {
                 resolver.delete(item, null, null); // never leave partial files visible
             }
         }
+        return unique;
     }
 
     /** Avoids overwriting an existing download by suffixing " (n)". */
@@ -170,7 +183,8 @@ final class DownloadTask {
 
     // ------------------------------------------------------------- API 23–28
 
-    private static void writeLegacy(Context context, InputStream in, String fileName) throws Exception {
+    private static String writeLegacy(Context context, InputStream in, String fileName,
+                                      long expectedBytes) throws Exception {
         File dir = new File(Environment.getExternalStoragePublicDirectory(
                 Environment.DIRECTORY_DOWNLOADS), TARGET_SUBDIR);
         //noinspection ResultOfMethodCallIgnored
@@ -185,23 +199,30 @@ final class DownloadTask {
                     : fileName + suffix);
             attempt++;
         }
+        boolean ok = false;
         try (OutputStream fos = new FileOutputStream(out)) {
-            copy(in, fos);
+            long written = copy(in, fos);
+            if (expectedBytes > 0 && written != expectedBytes) {
+                throw new Exception("Incomplete download (" + written
+                        + " of " + expectedBytes + " bytes)");
+            }
+            ok = true;
+        } finally {
+            if (!ok && !out.delete()) {
+                out.deleteOnExit(); // never leave a truncated file in Downloads
+            }
         }
         // Register with the media scanner so the file shows up immediately.
         android.media.MediaScannerConnection.scanFile(
                 context, new String[]{out.getAbsolutePath()}, null, null);
+        return out.getName();
     }
 
     // ----------------------------------------------------------------- utils
 
-    private static void copy(InputStream in, OutputStream out) throws Exception {
-        byte[] buffer = new byte[64 * 1024];
-        int read;
-        while ((read = in.read(buffer)) != -1) {
-            out.write(buffer, 0, read);
-        }
-        out.flush();
+    /** Delegates to {@link Transfer}; kept as a named seam for the writers. */
+    private static long copy(InputStream in, OutputStream out) throws Exception {
+        return Transfer.copy(in, out);
     }
 
     private static String normalizeMime(String fromWebView, String fromResponse) {

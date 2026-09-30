@@ -96,7 +96,16 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ onNaviga
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [clampPosition]);
+  }, []);
+
+  // Cancel a pending simulated reply when the chat bubble unmounts.
+  const replyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (replyTimerRef.current !== null) clearTimeout(replyTimerRef.current);
+    },
+    []
+  );
 
   // Pointer event handlers for silky drag + drop across touch and mouse
   const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -170,8 +179,8 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ onNaviga
       { sender: 'user', text: userText, time: 'Now' },
     ]);
 
-    // Simulated reply
-    setTimeout(() => {
+    // Simulated reply — the timer is tracked so it can be cancelled on unmount.
+    replyTimerRef.current = setTimeout(() => {
       setChatHistory((prev) => [
         ...prev,
         {

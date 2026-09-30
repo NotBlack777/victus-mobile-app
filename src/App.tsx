@@ -50,26 +50,34 @@ export const App: React.FC = () => {
   const currentEntry = history[currentIndex] || HOME_ENTRY;
   const canGoBack = currentIndex > 0 || currentEntry.tabId !== 'home';
 
-  // Simulate progress bar animation on navigation
+  // Simulate progress bar animation on navigation. Each run cancels the timers
+  // of the previous one (and of a rapid unmount) — previously, overlapping
+  // navigations left stray timers that flipped the bar back to visible after
+  // it had already settled.
+  const loadingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const clearLoadingTimers = useCallback(() => {
+    loadingTimersRef.current.forEach(clearTimeout);
+    loadingTimersRef.current = [];
+  }, []);
   const triggerLoading = useCallback(() => {
+    clearLoadingTimers();
     setIsLoading(true);
     setProgress(15);
-    const t1 = setTimeout(() => setProgress(55), 100);
-    const t2 = setTimeout(() => setProgress(90), 220);
-    const t3 = setTimeout(() => {
+    const push = (fn: () => void, ms: number) =>
+      loadingTimersRef.current.push(setTimeout(fn, ms));
+    push(() => setProgress(55), 100);
+    push(() => setProgress(90), 220);
+    push(() => {
       setProgress(100);
-      setTimeout(() => {
+      push(() => {
         setIsLoading(false);
         setProgress(0);
       }, 150);
     }, 380);
+  }, [clearLoadingTimers]);
 
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-    };
-  }, []);
+  // Never leave timers running (or the bar stuck visible) after unmount.
+  useEffect(() => clearLoadingTimers, [clearLoadingTimers]);
 
   const navigateTo = useCallback(
     (url: string, title?: string, tabId?: string) => {
