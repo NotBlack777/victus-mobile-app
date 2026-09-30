@@ -19,6 +19,18 @@ tsconfig.tsbuildinfo
 .DS_Store
 Thumbs.db
 
+# Secrets and local environment files
+# .env holds the developer's own panel key (VICTUS_USER_API); it must never be
+# committed. .env.example is the documented template and stays tracked.
+.env
+.env.*
+!.env.example
+
+# Editor swap/backup leftovers
+*.orig
+*.rej
+*~
+
 # Android Studio generated files and folders
 captures/
 .externalNativeBuild/
