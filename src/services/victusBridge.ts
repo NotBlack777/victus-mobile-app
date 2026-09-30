@@ -406,6 +406,18 @@ export function shellOpenExternal(): void {
  * This decides *visibility* only. Every admin request is still authorised by the
  * panel itself; nothing here grants or caches a permission.
  */
+/**
+ * Asks the shell to re-check which admin areas this account may use, right now.
+ *
+ * <p>The check itself is silent and rate-limited, which is right for a
+ * background poll but left a user who is genuinely an administrator with no
+ * Admin Area entry and no way to ask again — the failure looked exactly like
+ * "the app thinks I am not an admin". A safe no-op in a browser.</p>
+ */
+export function shellRefreshAdminAccess(): void {
+  window.VictusNative?.shellRefreshAdminAccess?.();
+}
+
 export function shellAdminAreas(): string[] {
   const read = window.VictusNative?.shellAdminAreas;
   if (typeof read !== 'function') return [];

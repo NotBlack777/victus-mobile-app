@@ -166,6 +166,33 @@ describe('the chat-bubble drag notification', () => {
   });
 });
 
+describe('reaching the admin area', () => {
+  // The Admin Area menu entry only appears once the shell has confirmed the
+  // role with the panel. The probe behind it is silent and rate-limited, so a
+  // probe that failed once left a real administrator with no entry at all and
+  // nothing on screen saying why — which reads as "the app thinks I am not an
+  // admin". The retry is the missing affordance.
+
+  test('the admin retry reaches the shell when it is present', async () => {
+    const { shellRefreshAdminAccess } = await import('../src/services/victusBridge.ts');
+    let calls = 0;
+    w.VictusNative = { shellRefreshAdminAccess: () => { calls += 1; } };
+    shellRefreshAdminAccess();
+    expect(calls).toBe(1);
+  });
+
+  test('the admin retry is a safe no-op in a browser', async () => {
+    const { shellRefreshAdminAccess } = await import('../src/services/victusBridge.ts');
+    expect(() => shellRefreshAdminAccess()).not.toThrow();
+  });
+
+  test('a partial bridge that lacks the retry still does not throw', async () => {
+    const { shellRefreshAdminAccess } = await import('../src/services/victusBridge.ts');
+    w.VictusNative = { shellUiState: () => '{}' };
+    expect(() => shellRefreshAdminAccess()).not.toThrow();
+  });
+});
+
 describe('account creation routes to the real sign-up form', () => {
   test('the sign-up URL is the real sign-up form', async () => {
     const { ACCOUNT_SIGNUP_URL } = await import('../src/services/authService.ts');

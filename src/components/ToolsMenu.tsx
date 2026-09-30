@@ -34,6 +34,7 @@ import {
   shellClearSession,
   shellOpenExternal,
   shellOpenNativeMenu,
+  shellRefreshAdminAccess,
 } from '../services/victusBridge.ts';
 
 interface ToolsMenuProps {
@@ -456,7 +457,7 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
           </button>
 
           {/* Admin Area — only for accounts the panel says may use one. Everyone
-              else (including the demo account) sees nothing admin-related here. */}
+              else sees nothing admin-related here. */}
           {adminAreas.length > 0 && (
             <button
               onClick={() => handleLink(adminAreas[0], 'Admin Area', 'control')}
@@ -466,6 +467,32 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
                 <Shield className="w-3.5 h-3.5" />
               </div>
               <span className="text-xs font-semibold">Admin Area</span>
+            </button>
+          )}
+
+          {/* The Admin Area entry above only appears once the shell has
+              successfully confirmed the role. A probe that failed once — offline
+              at launch, the panel busy — therefore left a real administrator
+              with no entry and nothing on screen saying why. This is the "ask
+              again": it forces a fresh probe and, if the panel grants access, the
+              Admin Area entry appears a moment later on its own.
+
+              Shown only to a signed-in account, and it names no admin URL and no
+              privilege: it asks a question, it does not grant anything, so it is
+              not an admin surface. */}
+          {user && adminAreas.length === 0 && (
+            <button
+              onClick={() => {
+                shellRefreshAdminAccess();
+                showToast('Asking the panel what this account may use.');
+                onClose();
+              }}
+              className="w-full min-h-[38px] px-3 rounded-lg flex items-center gap-3 hover:bg-white/[0.04] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer text-left"
+            >
+              <div className="w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Shield className="w-3.5 h-3.5 text-slate-500" />
+              </div>
+              <span className="text-xs">Check admin access again</span>
             </button>
           )}
 

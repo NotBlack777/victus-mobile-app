@@ -1,5 +1,26 @@
 # Changelog
 
+## Victus Cloud 4.6.6 (a way back into the admin area)
+
+`versionCode 54` / `versionName 4.6.6`. **Install this over 4.6.5.**
+
+### Added
+
+**"Check admin access again".** The Admin Area entry
+(`https://control.victuscloud.com/admin`) only appears once the shell has asked
+the panel what the signed-in account may use. That check is silent and
+rate-limited — correct for a background poll, wrong for the one thing a user is
+actually waiting on. A probe that failed once, because the phone was offline at
+launch or the panel was busy, left a genuine administrator with no Admin Area
+entry and nothing on screen to say why. It looked exactly like the app deciding
+they were not an admin.
+
+A signed-in account with no admin area now has a way to ask again; the panel is
+re-queried immediately and the Admin Area entry appears on its own a moment
+later if access is granted. The entry names no URL and no privilege — it asks a
+question rather than granting anything — and it is shown only to a signed-in
+account, so non-admins still see nothing admin-related. Three new tests.
+
 ## Victus Cloud 4.6.5 (new releases now offer themselves)
 
 `versionCode 53` / `versionName 4.6.5`. **Install this over 4.6.4.**

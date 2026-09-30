@@ -1754,6 +1754,25 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         }
 
         /**
+         * Re-runs the admin-role probe now, ignoring the interval floor.
+         *
+         * <p>The probe is silent and cached, which is right for a check that runs
+         * in the background and wrong for the one thing a user is actually
+         * waiting on. A probe that failed once — offline at launch, the panel
+         * busy — left the menu with no Admin Area entry and no way to ask
+         * again, so a genuine administrator was simply locked out with nothing
+         * on screen to explain it. This is the "try again" that was missing.</p>
+         */
+        @JavascriptInterface
+        public void shellRefreshAdminAccess() {
+            activity.runOnUiThread(() -> {
+                if (activity.isFinishing() || activity.isDestroyed()) return;
+                activity.startAdminAreaCheck(true);
+                activity.refreshUpdateUi();
+            });
+        }
+
+        /**
          * The installed binary's own version name, read from its package.
          *
          * <p>Shown in the account sheet so "the fix isn't working" can be told
@@ -1767,8 +1786,7 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
             return DeviceCompat.appVersion(activity);
         }
 
-        /** System back: walks WebView history like the gesture does. */
-        @JavascriptInterface
+        /** System back: walks WebView history like the gesture does. */        @JavascriptInterface
         public void shellBack() {
             activity.runOnUiThread(() -> {
                 if (activity.isFinishing() || activity.isDestroyed()) return;

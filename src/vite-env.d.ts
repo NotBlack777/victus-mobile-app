@@ -51,6 +51,8 @@ interface VictusNativeBridge {
   shellUiState?: () => string;
   /** The installed binary's versionName, so the UI can name the running build. */
   appVersion?: () => string;
+  /** Re-runs the admin-role probe immediately, ignoring its interval floor. */
+  shellRefreshAdminAccess?: () => void;
   /** The system back button's behaviour: WebView history, then Home, then exit. */
   shellBack?: () => void;
   /** Reloads the page currently in the WebView (the web header's refresh). */
