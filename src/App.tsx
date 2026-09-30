@@ -14,6 +14,7 @@ import { ErrorOverlay } from './components/ErrorOverlay.tsx';
 import { BackgroundFX } from './components/BackgroundFX.tsx';
 import { DockTab } from './types.ts';
 import { useAuth } from './context/AuthContext.tsx';
+import { hasShellBridge, shellBack, shellRefresh } from './services/victusBridge.ts';
 
 interface HistoryEntry {
   tabId: string;
@@ -132,7 +133,18 @@ export const App: React.FC = () => {
     if (currentIndex > 0) {
       setCurrentIndex((prev) => prev - 1);
       triggerLoading();
-    } else if (currentEntry.tabId !== 'home') {
+      return;
+    }
+
+    // In-app history is exhausted. Inside the APK the shell owns the real
+    // WebView history (and knows when to leave the app), so hand over rather
+    // than guessing; in a browser the guardian entry lets the press fall through.
+    if (hasShellBridge()) {
+      shellBack();
+      return;
+    }
+
+    if (currentEntry.tabId !== 'home') {
       navigateTo('', 'Victus Cloud', 'home');
     }
   }, [errorState.isOpen, currentIndex, currentEntry, navigateTo, triggerLoading]);
@@ -169,8 +181,15 @@ export const App: React.FC = () => {
 
   const handleRefresh = useCallback(() => {
     setErrorState((prev) => ({ ...prev, isOpen: false }));
+    // A live Victus page is loaded by the shell's WebView, so the reload has to
+    // happen there; the bundled home is this app and only needs its own bar.
+    if (hasShellBridge() && currentEntry.url) {
+      shellRefresh();
+      triggerLoading();
+      return;
+    }
     triggerLoading();
-  }, [triggerLoading]);
+  }, [currentEntry.url, triggerLoading]);
 
   const handleClearSession = useCallback(() => {
     setHistory([HOME_ENTRY]);

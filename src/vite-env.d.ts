@@ -41,6 +41,34 @@ interface VictusNativeBridge {
   apiGet?: (path: string, callbackId: string) => void;
   /** Authenticated POST for a path inside `/api/client` (power actions, console). */
   apiPost?: (path: string, body: string, callbackId: string) => void;
+
+  /* ---------------------------------------------------------------- shell
+   * The shell draws no chrome of its own since 4.5.0: the single web menu is
+   * the only menu, so these are how it drives the native layer. They are all
+   * synchronous pure reads / UI-thread commands — no callback id, no promise. */
+
+  /** JSON snapshot: update availability, current URL, back/refresh state, admin areas. */
+  shellUiState?: () => string;
+  /** The system back button's behaviour: WebView history, then Home, then exit. */
+  shellBack?: () => void;
+  /** Reloads the page currently in the WebView (the web header's refresh). */
+  shellRefresh?: () => void;
+  /** Loads an allowlisted Victus https URL in the shell (the channel chips). */
+  shellNavigate?: (url: string) => void;
+  /** Opens the glass native sheet: "settings" | "device" | "updates". */
+  shellOpenNativeMenu?: (which: string) => void;
+  /** Clears cookies/storage/cache after the web menu's own confirmation. */
+  shellClearSession?: () => void;
+  /** Hands the page currently on screen to the device browser. */
+  shellOpenExternal?: () => void;
+  /** JSON array of admin-area base URLs this account may use; `[]` for everyone else. */
+  shellAdminAreas?: () => string;
+  /**
+   * JSON authenticator window on the panel's clock: seconds remaining until the
+   * next code, whether a real server sample was taken, and the clock offset.
+   * Carries no code, secret or account data.
+   */
+  authTotpState?: () => string;
 }
 
 interface Window {

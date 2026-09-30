@@ -369,4 +369,67 @@ public class VictusApiTest {
         assertFalse(VictusApi.looksLikeTotpOrRecoveryCode(""));
         assertFalse(VictusApi.looksLikeTotpOrRecoveryCode(null));
     }
+
+    @Test
+    public void spacedCodesAreNormalisedToTheSixDigits() {
+        // What an authenticator app displays, and what Android's OTP autofill
+        // inserts. Sent verbatim this arrives as an invalid code.
+        assertEquals("123456", VictusApi.normaliseTwoFactorCode(" 123 456 "));
+        assertEquals("654321", VictusApi.normaliseTwoFactorCode("654 321"));
+        assertEquals("123456", VictusApi.normaliseTwoFactorCode("123\n456"));
+        assertEquals("123456", VictusApi.normaliseTwoFactorCode("\t123456  "));
+        assertEquals("", VictusApi.normaliseTwoFactorCode("   "));
+        assertEquals("", VictusApi.normaliseTwoFactorCode(null));
+    }
+
+    @Test
+    public void spacedDigitsStillClassifyAsTotp() {
+        assertEquals(VictusApi.TwoFactorKind.TOTP,
+                VictusApi.classifyTwoFactor(" 123 456 "));
+        assertEquals(VictusApi.TwoFactorKind.TOTP,
+                VictusApi.classifyTwoFactor("123456"));
+    }
+
+    @Test
+    public void recoveryCodesClassifySeparatelyFromTotpCodes() {
+        assertEquals(VictusApi.TwoFactorKind.RECOVERY,
+                VictusApi.classifyTwoFactor("a1b2c3d4e5f6a1b2c3d4"));
+        assertEquals(VictusApi.TwoFactorKind.RECOVERY,
+                VictusApi.classifyTwoFactor("12345678"));
+        assertEquals(VictusApi.TwoFactorKind.UNKNOWN,
+                VictusApi.classifyTwoFactor("12345a"));
+        assertEquals(VictusApi.TwoFactorKind.UNKNOWN,
+                VictusApi.classifyTwoFactor("ab"));
+        assertEquals(VictusApi.TwoFactorKind.UNKNOWN,
+                VictusApi.classifyTwoFactor(""));
+        assertEquals(VictusApi.TwoFactorKind.UNKNOWN,
+                VictusApi.classifyTwoFactor(null));
+    }
+
+    @Test
+    public void recoveryCodesGoToRecoveryTokenNotAuthenticationCode() {
+        // The panel validates these two fields separately, so a recovery code sent
+        // as authentication_code can only ever come back as "invalid code".
+        String body = VictusApi.checkpointBody("confirm-token",
+                "a1b2c3d4e5f6a1b2c3d4", VictusApi.TwoFactorKind.RECOVERY);
+        assertTrue(body.contains("\"recovery_token\":\"a1b2c3d4e5f6a1b2c3d4\""));
+        assertFalse(body.contains("authentication_code"));
+        assertTrue(body.contains("\"confirmation_token\":\"confirm-token\""));
+    }
+
+    @Test
+    public void authenticatorCodesStillGoToAuthenticationCode() {
+        String body = VictusApi.checkpointBody("confirm-token", "123 456",
+                VictusApi.classifyTwoFactor("123 456"));
+        assertTrue(body.contains("\"authentication_code\":\"123456\""));
+        assertFalse(body.contains("recovery_token"));
+    }
+
+    @Test
+    public void theDefaultCheckpointBodyRoutesByShape() {
+        String recovery = VictusApi.checkpointBody("t", "a1b2c3d4e5f6a1b2c3d4");
+        assertTrue(recovery.contains("recovery_token"));
+        String totp = VictusApi.checkpointBody("t", "123456");
+        assertTrue(totp.contains("authentication_code\":\"123456\""));
+    }
 }

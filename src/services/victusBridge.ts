@@ -262,3 +262,184 @@ export async function nativeApiPost(
   const payload = await invoke('apiPost', path, body);
   return parsePayload<NativeApiResponse>(payload, 'The panel response could not be read.');
 }
+
+/* ==========================================================================
+ * Shell half of the bridge
+ *
+ * Since 4.5.0 the Android shell draws no chrome of its own: there is exactly
+ * one menu, and it is this app's header + channel chips. These helpers are how
+ * that single menu drives the native layer (back/refresh, channel navigation,
+ * the glass Appearance sheet, clear-session, update checks, admin areas).
+ *
+ * Every method here is synchronous in the native layer and simply absent in a
+ * plain browser, so each one is a no-op outside the APK.
+ * ========================================================================== */
+
+/** Snapshot the shell exposes to the single menu. */
+export interface ShellUiState {
+  /** A newer signed build is published and not yet installed. */
+  updateAvailable: boolean;
+  /** The available version's name, or '' when there is none. */
+  updateVersion: string;
+  /** The URL currently loaded in the shell's WebView. */
+  currentUrl: string;
+  /** The WebView has history to go back to. */
+  canGoBack: boolean;
+  /** The user asked for reduced motion natively (Appearance → Reduce animations). */
+  reduceMotion: boolean;
+  /** Admin-area base URLs that apply to {@link currentUrl}; `[]` for normal accounts. */
+  adminAreas: string[];
+}
+
+const EMPTY_SHELL_STATE: ShellUiState = {
+  updateAvailable: false,
+  updateVersion: '',
+  currentUrl: '',
+  canGoBack: false,
+  reduceMotion: false,
+  adminAreas: [],
+};
+
+/**
+ * True when running inside the 4.5.0+ shell, i.e. when the single menu can drive
+ * navigation, refresh and the native Appearance sheets.
+ */
+export function hasShellBridge(): boolean {
+  return typeof window.VictusNative?.shellUiState === 'function';
+}
+
+/** Reads the shell snapshot; safe (and cheap) to call on every render. */
+export function shellUiState(): ShellUiState {
+  const read = window.VictusNative?.shellUiState;
+  if (typeof read !== 'function') return EMPTY_SHELL_STATE;
+  try {
+    const parsed = JSON.parse(read.call(window.VictusNative)) as Partial<ShellUiState>;
+    return {
+      updateAvailable: Boolean(parsed.updateAvailable),
+      updateVersion: typeof parsed.updateVersion === 'string' ? parsed.updateVersion : '',
+      currentUrl: typeof parsed.currentUrl === 'string' ? parsed.currentUrl : '',
+      canGoBack: Boolean(parsed.canGoBack),
+      reduceMotion: Boolean(parsed.reduceMotion),
+      adminAreas: Array.isArray(parsed.adminAreas)
+        ? parsed.adminAreas.filter((area): area is string => typeof area === 'string')
+        : [],
+    };
+  } catch {
+    // A malformed snapshot must never take the menu down with it.
+    return EMPTY_SHELL_STATE;
+  }
+}
+
+/** System-back behaviour: WebView history first, then Home, then leave the app. */
+export function shellBack(): void {
+  window.VictusNative?.shellBack?.();
+}
+
+/** Reloads the page in the shell (the header's refresh button). */
+export function shellRefresh(): void {
+  window.VictusNative?.shellRefresh?.();
+}
+
+/** Loads an allowlisted Victus https page in the shell — the channel chips. */
+export function shellNavigate(url: string): void {
+  window.VictusNative?.shellNavigate?.(url);
+}
+
+/** Opens the glass native sheet: `settings` (Appearance), `device` or `updates`. */
+export function shellOpenNativeMenu(which: 'settings' | 'device' | 'updates'): void {
+  window.VictusNative?.shellOpenNativeMenu?.(which);
+}
+
+/** Wipes WebView cookies/storage/cache; call only after a user confirmation. */
+export function shellClearSession(): void {
+  window.VictusNative?.shellClearSession?.();
+}
+
+/** Hands the page currently on screen to the device browser. */
+export function shellOpenExternal(): void {
+  window.VictusNative?.shellOpenExternal?.();
+}
+
+/**
+ * Which admin areas the signed-in account may use. Empty outside the APK, for a
+ * demo account, and for any account without an admin role — so a normal user
+ * never sees an admin toggle, a hint, or a preview of one.
+ *
+ * This decides *visibility* only. Every admin request is still authorised by the
+ * panel itself; nothing here grants or caches a permission.
+ */
+export function shellAdminAreas(): string[] {
+  const read = window.VictusNative?.shellAdminAreas;
+  if (typeof read !== 'function') return [];
+  try {
+    const parsed = JSON.parse(read.call(window.VictusNative)) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((area): area is string => typeof area === 'string' && area.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The authenticator's 30-second window, measured on the panel's clock.
+ *
+ * An authenticator code is derived from a 30-second step of the *server's* clock,
+ * so a phone whose clock is off — or a code read off the screen one second before
+ * it rotated — produces a perfectly correct code the panel rejects. This is the
+ * shell's view of that window; the sign-in screen uses it to show when the next
+ * code starts. No code, secret or account data is involved.
+ */
+export interface TotpWindowState {
+  /** Whole seconds (1–30) left in the current code, on the server's clock. */
+  secondsRemaining: number;
+  /** Milliseconds until the next code begins, on the server's clock. */
+  millisUntilNext: number;
+  /** The step length; always 30. */
+  periodSeconds: number;
+  /** True once a real `Date` sample from the panel has been taken. */
+  synced: boolean;
+  /** Panel time minus device time, in millis. */
+  offsetMillis: number;
+}
+
+const FALLBACK_TOTP_WINDOW: TotpWindowState = {
+  secondsRemaining: 30,
+  millisUntilNext: 30_000,
+  periodSeconds: 30,
+  synced: false,
+  offsetMillis: 0,
+};
+
+/**
+ * Reads the shell's authenticator window. In a browser there is no shell, so this
+ * falls back to the device clock with the standard period — which is exactly what
+ * the browser build can honestly offer.
+ */
+export function totpWindowState(): TotpWindowState {
+  const read = window.VictusNative?.authTotpState;
+  if (typeof read !== 'function') {
+    return { ...FALLBACK_TOTP_WINDOW, millisUntilNext: msToNextWindow(Date.now()) };
+  }
+  try {
+    const parsed = JSON.parse(read.call(window.VictusNative)) as Partial<TotpWindowState>;
+    const secondsRemaining = Number(parsed.secondsRemaining);
+    return {
+      secondsRemaining:
+        Number.isFinite(secondsRemaining) && secondsRemaining > 0
+          ? Math.min(30, Math.round(secondsRemaining))
+          : 30,
+      millisUntilNext: Number(parsed.millisUntilNext) || 0,
+      periodSeconds: Number(parsed.periodSeconds) || 30,
+      synced: Boolean(parsed.synced),
+      offsetMillis: Number(parsed.offsetMillis) || 0,
+    };
+  } catch {
+    return FALLBACK_TOTP_WINDOW;
+  }
+}
+
+/** Milliseconds until the next 30-second boundary on a raw (device) timeline. */
+function msToNextWindow(epochMillis: number): number {
+  const period = 30_000;
+  return period - (((epochMillis % period) + period) % period);
+}

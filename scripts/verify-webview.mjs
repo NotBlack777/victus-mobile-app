@@ -69,6 +69,7 @@ page.on('response', (r) => responses.push({ url: r.url(), status: r.status() }))
 await page.addInitScript(() => {
   window.__victusBridgeCalls = [];
   window.__victusOpenCalls = [];
+  window.__victusShellCalls = [];
   window.VictusNative = {
     openWebView: (url, title) => {
       window.__victusBridgeCalls.push({ url, title });
@@ -76,6 +77,27 @@ await page.addInitScript(() => {
     openBrowser: (url) => {
       window.__victusOpenCalls.push(String(url));
     },
+    // The shell half of the bridge (4.5.0+). The admin list is empty by default,
+    // which is exactly what a demo / non-admin account must be answered with.
+    shellUiState: () => JSON.stringify({
+      updateAvailable: false,
+      updateVersion: '',
+      currentUrl: 'https://control.victuscloud.com',
+      canGoBack: true,
+      reduceMotion: false,
+      adminAreas: window.__victusAdminAreas || [],
+    }),
+    shellAdminAreas: () => JSON.stringify(window.__victusAdminAreas || []),
+    shellBack: () => { window.__victusShellCalls.push('back'); },
+    shellRefresh: () => { window.__victusShellCalls.push('refresh'); },
+    shellNavigate: (url) => { window.__victusShellCalls.push(`navigate:${url}`); },
+    shellOpenNativeMenu: (which) => { window.__victusShellCalls.push(`menu:${which}`); },
+    shellClearSession: () => { window.__victusShellCalls.push('clear'); },
+    shellOpenExternal: () => { window.__victusShellCalls.push('external'); },
+    authTotpState: () => JSON.stringify({
+      secondsRemaining: 21, millisUntilNext: 21456, periodSeconds: 30,
+      synced: true, offsetMillis: 0,
+    }),
   };
   window.open = (url) => {
     window.__victusOpenCalls.push(String(url));
@@ -199,25 +221,106 @@ const sampleFleet = await page.evaluate(() => {
 check('demo mode labels the fleet as sample data',
   sampleFleet.sampleBanner && !sampleFleet.liveBanner, JSON.stringify(sampleFleet));
 
-// 4b. "Web View" must hand the live portal to the app's own browser surface
-// (the portals cannot be framed, so this is the only way it can render).
-await page.getByRole('button', { name: 'Web View', exact: true }).click();
-const bridgeCalls = await page.evaluate(() => window.__victusBridgeCalls);
-check('Web View opens the live portal through the native in-app browser',
-  bridgeCalls.length === 1
-    && bridgeCalls[0].url.startsWith('https://control.victuscloud.com')
-    && typeof bridgeCalls[0].title === 'string'
-    && bridgeCalls[0].title.length > 0,
-  JSON.stringify(bridgeCalls[0] ?? null));
-check('Web View never falls back to the dev-server proxy',
+// 4b. A NON-ADMIN must see nothing admin-related at all: no view-toggle, no
+// "Web View" button, no hint. The shell answers with an empty admin list for the
+// demo / normal account, and that has to be enough to hide everything.
+const nonAdminChrome = await page.evaluate(() => {
+  const text = document.body.textContent || '';
+  return {
+    toggle: !!document.querySelector('[aria-label="Admin view"]'),
+    webViewButton: [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Web View'),
+    mentionsSwitch: /Switch to (web|app) view/i.test(text),
+  };
+});
+check('a non-admin sees no admin toggle and no Web View button',
+  !nonAdminChrome.toggle && !nonAdminChrome.webViewButton && !nonAdminChrome.mentionsSwitch,
+  JSON.stringify(nonAdminChrome));
+
+// 4c. The admin Area entry in the one menu is hidden for the same reason.
+await page.evaluate(() => {
+  document.querySelector('[aria-label="Open navigation drawer"]')
+    ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+});
+await page.waitForSelector('text=MAIN', { timeout: 10000 });
+const menuForNonAdmin = await page.evaluate(() => document.body.textContent || '');
+check('the single menu hides the Admin Area entry from a non-admin',
+  !menuForNonAdmin.includes('Admin Area'), '');
+await page.keyboard.press('Escape');
+await page.evaluate(() => {
+  document.querySelector('[aria-body]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+});
+
+// 4d. …and an ADMIN in that area does get the toggle, whose "web" choice hands
+// the live portal to the app's own browser surface (the portals cannot be
+// framed, so this is the only way they can render).
+await page.evaluate(() => {
+  window.__victusAdminAreas = ['https://control.victuscloud.com'];
+});
+// The shell reports the areas for the page on screen, so open that area first.
+await page.evaluate(() => {
+  [...document.querySelectorAll('nav button')]
+    .find((b) => b.textContent.trim() === 'Control')
+    ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+});
+// The toggle is allowed to appear a moment later: the role check finishes in the
+// background, and it must show up in real time even on a page already open.
+const adminToggleVisible = await page
+  .waitForSelector('[aria-label="Admin view"]', { timeout: 8000 })
+  .then(() => true, () => false);
+await page.evaluate(() => { document.querySelector('[aria-label="Close drawer"]')?.dispatchEvent(new MouseEvent('click',{bubbles:true})); });
+await page.waitForTimeout(300);
+check('a real admin sees the web/app view toggle', adminToggleVisible);
+
+if (adminToggleVisible) {
+  await page.getByRole('button', { name: 'Switch to web view' }).click();
+  const bridgeCalls = await page.evaluate(() => window.__victusBridgeCalls);
+  check('the admin toggle opens the live admin site in the native in-app browser',
+    bridgeCalls.length === 1
+      && bridgeCalls[0].url.startsWith('https://control.victuscloud.com')
+      && typeof bridgeCalls[0].title === 'string'
+      && bridgeCalls[0].title.length > 0,
+    JSON.stringify(bridgeCalls[0] ?? null));
+  const remembered = await page.evaluate(() =>
+    localStorage.getItem('victus.adminView.https://control.victuscloud.com'));
+  check('the chosen view is remembered per admin area', remembered === 'web', String(remembered));
+  await page.evaluate(() => { window.__victusBridgeCalls = []; });
+
+  // A role revoked while the app sits in the background must take the toggle away
+  // again without the user navigating anywhere.
+  await page.evaluate(() => { window.__victusAdminAreas = []; });
+  const revokedGone = await page
+    .waitForSelector('[aria-label="Admin view"]', { state: 'detached', timeout: 8000 })
+    .then(() => true, () => false);
+  check('a revoked admin role removes the toggle in real time', revokedGone);
+}
+
+check('no admin path ever falls back to the dev-server proxy',
   ![...responses, ...failedRequests].some((r) => String(r.url ?? r).includes('/api/proxy')),
   responses.filter((r) => r.url.includes('/api/')).map((r) => r.url).slice(0, 2).join(' | '));
 
-// …and in a plain browser build (no bridge) the same button opens a tab instead.
+// …and the app's own single menu still offers the live site to everyone, through
+// the in-app browser in the APK and a browser tab in a plain build.
 await page.evaluate(() => {
+  document.querySelector('[aria-label="Open navigation drawer"]')
+    ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+});
+await page.getByRole('button', { name: 'Open site in app browser' }).click();
+const menuBridgeCalls = await page.evaluate(() => window.__victusBridgeCalls);
+check('the single menu opens the live site through the native in-app browser',
+  menuBridgeCalls.length === 1 && menuBridgeCalls[0].url.startsWith('https://'),
+  JSON.stringify(menuBridgeCalls));
+
+// …and in a plain browser build (no bridge) the same action opens a tab instead.
+await page.evaluate(() => {
+  window.__victusOpenCalls = [];
   delete window.VictusNative;
 });
-await page.getByRole('button', { name: 'Web View', exact: true }).click();
+await page.evaluate(() => {
+  document.querySelector('[aria-label="Open navigation drawer"]')
+    ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+});
+await page.getByRole('button', { name: 'Open site in app browser' }).click();
 const openCalls = await page.evaluate(() => window.__victusOpenCalls);
 check('without the native bridge the same action opens a browser tab',
   openCalls.length === 1 && openCalls[0].startsWith('https://'),

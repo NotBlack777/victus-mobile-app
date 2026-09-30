@@ -26,6 +26,7 @@ import {
 } from '../services/panelApi.ts';
 import { useAuth } from '../context/AuthContext.tsx';
 import { openVictusLink } from '../utils/navigation.ts';
+import { AdminViewToggle, useShellAdminAreas } from './AdminViewToggle.tsx';
 
 interface EcosystemFrameProps {
   url: string;
@@ -159,10 +160,9 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
    * WebView can, with the user's real cookies and POST logins, so the native
    * shell opens one via window.VictusNative. A browser build falls back to a tab.
    */
-  const openWebView = () => {
-    const target = liveUrl();
+  const openWebView = (target = liveUrl(), label = title || displayHostname) => {
     if (window.VictusNative?.openWebView) {
-      window.VictusNative.openWebView(target, title || displayHostname);
+      window.VictusNative.openWebView(target, label);
       showToast(`Opening ${displayHostname} in the app browser…`);
       return;
     }
@@ -182,6 +182,18 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
     showToast('Opening in your browser…');
   };
 
+  /**
+   * The admin area this page belongs to, or null.
+   *
+   * The shell answers only with areas the signed-in account may actually use,
+   * already filtered to the page on screen — so a non-admin (and the demo
+   * account) gets an empty list and this header shows no admin affordance at
+   * all: no toggle, no "Web View" button, no hint. The panel still enforces
+   * every admin request; hiding the control grants nothing.
+   */
+  const adminAreas = useShellAdminAreas();
+  const adminArea = adminAreas.length > 0 ? adminAreas[0] : null;
+
   return (
     <div className="flex-1 w-full flex flex-col relative select-none bg-[var(--bg)] text-[var(--text)]">
       {/* Panel header: title, "Web View" (the live site) and open-in-browser. */}
@@ -200,13 +212,17 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5">
-          <button
-            onClick={openWebView}
-            title={`Open the live ${displayHostname} site in the app browser`}
-            className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] text-slate-200 hover:text-white transition-colors cursor-pointer"
-          >
-            Web View
-          </button>
+          {/* Admin-only: the web-view / app-view toggle. Renders nothing for
+              accounts without access to this admin area. */}
+          {adminArea && (
+            <AdminViewToggle
+              area={adminArea}
+              onSwitchToWeb={() => openWebView(adminArea, 'Admin Area')}
+              onSwitchToApp={() =>
+                onNavigate?.(adminArea, 'Admin Area', 'control')
+              }
+            />
+          )}
           <button
             onClick={handleOpenExternal}
             title="Open the live site in the device browser"
@@ -217,7 +233,8 @@ export const EcosystemFrame: React.FC<EcosystemFrameProps> = ({
         </div>
       </div>
 
-      {/* Native panel view — the live site is one tap away via "Web View". */}
+      {/* Native panel view — the live admin website is one tap away via the
+          admin view-toggle (admins only). */}
       <div className="flex-1 w-full overflow-y-auto no-scrollbar">
           {/* ======================================================== */}
           {/* CONTROL TAB (Dashboard / Fleet Overview or Service Detail) */}

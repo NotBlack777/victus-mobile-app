@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft,
   RotateCw,
@@ -7,10 +7,12 @@ import {
   Menu,
   Bell,
   LogOut,
+  Download,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useNotifications } from '../context/NotificationContext.tsx';
+import { hasShellBridge, shellOpenNativeMenu, shellUiState } from '../services/victusBridge.ts';
 
 interface TopBarProps {
   canGoBack: boolean;
@@ -38,6 +40,26 @@ export const TopBar: React.FC<TopBarProps> = ({
   const { isDark, toggleColorMode } = useTheme();
   const { user, signOut, isDemo } = useAuth();
   const { unreadCount } = useNotifications();
+
+  // A native-only affordance: in a browser there is no update service, so the
+  // button never appears and nothing polls.
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [updateVersion, setUpdateVersion] = useState('');
+
+  useEffect(() => {
+    if (!hasShellBridge()) return;
+    const read = () => {
+      const state = shellUiState();
+      setUpdateAvailable(state.updateAvailable);
+      setUpdateVersion(state.updateVersion);
+    };
+    read();
+    // The shell's own background check posts back when it finds one; polling
+    // here would be a second, redundant request. Two slow ticks are enough to
+    // catch a check that lands just after this screen mounts.
+    const timer = window.setInterval(read, 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   // Single Source of Truth Auth Check: Open account profile if authenticated
   const handleAvatarTap = () => {
@@ -111,6 +133,28 @@ export const TopBar: React.FC<TopBarProps> = ({
 
         {/* Right Action Icons */}
         <div className="flex items-center gap-1 sm:gap-1.5 flex-shrink-0 ml-1.5 sm:ml-2">
+          {/* Update available — the badge the old native Tools menu carried, now
+              in the one remaining menu. Reads the shell's own background check,
+              so nothing is polled from the page. */}
+          {updateAvailable && (
+            <button
+              onClick={() => shellOpenNativeMenu('updates')}
+              aria-label={`Update available: version ${updateVersion}`}
+              title={`Update available · ${updateVersion}`}
+              className="relative w-8.5 h-8.5 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl border active:scale-95 transition-all cursor-pointer"
+              style={{
+                borderColor: 'var(--line)',
+                backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
+                color: 'var(--text)',
+              }}
+            >
+              <Download className="w-4 h-4 text-emerald-400" />
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 shadow-xs"
+                style={{ borderColor: 'var(--surface-topbar)' }}
+              />
+            </button>
+          )}
+
           {/* Notification Bell */}
           <button
             onClick={onOpenNotifications}

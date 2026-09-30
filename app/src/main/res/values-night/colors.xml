@@ -21,9 +21,8 @@
     <color name="sheet_handle">#4DE7D9FB</color>
     <color name="swatch_stroke">#40FFFFFF</color>
 
-    <!-- Tools overflow menu (dark glass in both modes). -->
+    <!-- Translucent glass card used by the native sheets (dark glass in both
+         modes, so these are identical above and below). -->
     <color name="menu_bg">#F20C0C14</color>
     <color name="menu_stroke">#14FFFFFF</color>
-    <color name="menu_icon">#A8B0C0</color>
-    <color name="danger">#F87171</color>
 </resources>

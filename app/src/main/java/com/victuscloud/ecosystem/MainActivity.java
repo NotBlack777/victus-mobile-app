@@ -61,12 +61,12 @@ import java.util.concurrent.Executors;
  * <p>Responsibilities (method names mirror the original APK so the codebase stays
  * familiar to anyone who worked from the decompiled notes):</p>
  * <ul>
- *   <li>{@link #createLayout()} — native chrome: top bar + horizontally scrolling dock</li>
+ *   <li>{@link #createLayout()} — the chromeless page host (the app draws its own
+ *       single header and channel bar; the shell only owns the WebView)</li>
  *   <li>{@link #configureWebView()} — WebView settings, no deprecated APIs</li>
  *   <li>{@link #createErrorOverlay()} — native error screen, animator-driven fades</li>
  *   <li>{@link #createDownloadListener()} — scoped-storage-safe downloads</li>
  *   <li>{@link #confirmClearSession()} — cookie/storage/cache wipe with confirmation</li>
- *   <li>{@link #showToolsMenu()} — share/copy/open-in-browser/tools sheet</li>
  * </ul>
  *
  * <p>All sizing goes through {@link #dp(float)} (density-independent pixels) and all
@@ -85,7 +85,12 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
     private static final String HOME_URL = ASSETS_ORIGIN + "/index.html";
 
     private static final int TAB_HOME = 0;
-    private static final String[] DOCK_URLS = {
+    /**
+     * Tab targets mirror {@code DOCK_TABS} in the web app (the single menu).
+     * The shell keeps only the shared navigable URLs; chips themselves are
+     * rendered by the web app.
+     */
+    static final String[] DOCK_URLS = {
             HOME_URL,                                  // Home
             "https://victuscloud.com",                 // Website
             "https://billing.victuscloud.com",         // Billing
@@ -94,10 +99,12 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
             "https://victuscloud.com/support",         // Support
             "https://victuscloud.com/status",          // Status
     };
-    private static final int[] DOCK_LABELS = {
-            R.string.tab_home, R.string.tab_website, R.string.tab_billing,
-            R.string.tab_control, R.string.tab_drive, R.string.tab_support, R.string.tab_status,
-    };
+    static final int TAB_WEBSITE = 1;
+    static final int TAB_BILLING = 2;
+    static final int TAB_CONTROL = 3;
+    static final int TAB_DRIVE = 4;
+    static final int TAB_SUPPORT = 5;
+    static final int TAB_STATUS = 6;
 
     private static final String KEY_SELECTED_TAB = "selected_tab";
     /** URI scheme used by the launcher shortcuts (res/xml/shortcuts.xml). */
@@ -106,25 +113,25 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
     // ------------------------------------------------------------------- views
 
     private FrameLayout rootView;
-    private LinearLayout topBar;
-    private ImageButton backButton;
-    private ImageButton toolsButton;
-    /** Dot shown on the tools button when a newer build is known to exist. */
-    private View updateBadge;
+    /**
+     * The single menu is the bundled React app's own header + channel chips
+     * (TopBar.tsx / DockBar.tsx). The shell draws no chrome of its own — the old
+     * native top bar and purple pill dock were removed so there is exactly one
+     * menu. Native Tools/Appearance screens are reachable through the web menu
+     * via the {@code shell*} bridge methods.
+     */
+    private View updateBadge; // kept: the web menu reads its state through the bridge
     /** Set when a launcher shortcut asked for the updater directly. */
     private boolean pendingUpdateSheet;
     private ProgressBar pageProgress;
     private SwipeRefreshLayout pullRefresh;
     private WebView webView;
-    private HorizontalScrollView dockScroller;
-    private LinearLayout dockRow;
-    private final TextView[] dockChips = new TextView[DOCK_URLS.length];
     private FrameLayout errorOverlay;
     private TextView errorMessage;
     private TextView errorGlyph;
     private TextView errorRetryButton;
-    private TextView errorProceedButton;
     private TextView errorWebViewUpdateLink;
+    private TextView errorDateTimeLink;
     private android.webkit.SslErrorHandler pendingSslHandler;
 
     private WebViewAssetLoader assetLoader;
@@ -153,10 +160,12 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
      * {@link #showMissingWebViewScreen()}).
      */
     private boolean webViewAvailable = true;
-    /** -1 = no tab styled yet. Forces the very first {@link #selectDock} call
-     *  to actually apply the "selected" style instead of being skipped by the
-     *  no-op fast path (which compares against the previous selection). */
-    private int selectedDock = -1;
+    /**
+     * Last tab the shell itself navigated to (launcher shortcut, shell restore).
+     * Purely bookkeeping for {@link #handleWebBackNavigation} and saved state —
+     * the visible chip selection lives in the web app.
+     */
+    private int selectedDock = TAB_HOME;
     private String lastErrorUrl;
 
     // ------------------------------------------------------ activity results
@@ -245,12 +254,10 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         if (savedInstanceState != null) {
             int restoredTab = savedInstanceState.getInt(KEY_SELECTED_TAB, TAB_HOME);
             webView.restoreState(savedInstanceState);
-            selectDock(restoredTab, false);
         } else {
             String startUrl = resolveStartUrl(getIntent());
             if (startUrl == null) startUrl = HOME_URL;
             loadUrlInternal(startUrl);
-            selectDock(indexForUrl(startUrl), false);
         }
 
         // "Check for updates" launcher shortcut: open the sheet once the first
@@ -274,7 +281,6 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         String url = resolveStartUrl(intent);
         if (url != null) {
             loadUrlInternal(url);
-            selectDock(indexForUrl(url), false);
         }
         if (pendingUpdateSheet) {
             pendingUpdateSheet = false;
@@ -307,6 +313,10 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         if (inAppBrowser != null) inAppBrowser.onHostResume();
         // An update may have been installed (or found) while we were away.
         refreshUpdateUi();
+        // Silent admin-area re-check: a role revoked while we were backgrounded
+        // must lose the view-toggle on this very resume. No spinner, no message,
+        // nothing logged — the panel enforces every admin request regardless.
+        startAdminAreaCheck();
     }
 
     @Override
@@ -396,35 +406,30 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
     // ========================================================== native chrome
 
     /**
-     * Builds the native chrome around the WebView: a compact top bar
-     * (Back / title / Refresh / Tools), a thin page-progress bar, the WebView
-     * itself, and the dock row. Everything is measured in dp — nothing is a raw
-     * pixel value, so every density bucket renders identically in physical size.
+     * Builds the chromeless host: the full-screen WebView is the whole app — the
+     * single menu (header + channel chips) is the bundled React app's own.
+     * Behind it sits a thin progress bar (now anchored to the top edge, since no
+     * native bar exists) and the error overlay. Everything is measured in dp.
      */
     private void createLayout() {
         rootView = new FrameLayout(this);
 
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
+        webView = new WebView(this);
+        webView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
+        rootView.addView(webView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        buildTopBar(content);
-
-        // Thin progress bar directly under the top bar.
+        // Thin progress bar pinned to the top edge, over the web header.
         pageProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         pageProgress.setMax(100);
         pageProgress.setProgressTintList(ColorStateList.valueOf(ThemeManager.solid(this)));
         pageProgress.setVisibility(View.GONE);
-        content.addView(pageProgress,
-                new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(3)));
+        rootView.addView(pageProgress, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, dp(3), Gravity.TOP));
 
-        webView = new WebView(this);
-        webView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
-        LinearLayout.LayoutParams webParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
-
-        // Pull-to-refresh on the whole content column; disabled while the page
-        // loads so a refresh can't stack on itself. Only our bundled home screen
-        // and Victus Cloud pages are refreshable (external sites keep their own
+        // Pull-to-refresh on the whole surface; disabled while the page loads so
+        // a refresh can't stack on itself. Only our bundled home screen and
+        // Victus Cloud pages are refreshable (external sites keep their own
         // gesture space and never silently re-POST anything).
         pullRefresh = new SwipeRefreshLayout(this);
         pullRefresh.addView(webView, new FrameLayout.LayoutParams(
@@ -436,11 +441,9 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
             webView.reload();
         });
         pullRefresh.setEnabled(false);
-        content.addView(pullRefresh, webParams);
-
-        buildDock(content);
-
-        rootView.addView(content, new FrameLayout.LayoutParams(
+        // Re-parent so the pull wrapper (not the bare WebView) sits in the root;
+        // the gesture must own the full screen for the pull to start anywhere.
+        rootView.addView(pullRefresh, 0, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
         createErrorOverlay();
@@ -449,263 +452,23 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         applyWindowInsets();
     }
 
-    /** Back / title / Refresh / Tools, 48dp touch targets throughout. */
-    private void buildTopBar(LinearLayout content) {
-        topBar = new LinearLayout(this);
-        topBar.setOrientation(LinearLayout.HORIZONTAL);
-        topBar.setGravity(Gravity.CENTER_VERTICAL);
-        topBar.setBackgroundColor(colorOf(R.color.surface_topbar));
-        topBar.setPadding(dp(8), dp(6), dp(8), dp(6));
-        topBar.setElevation(dp(3));
-        content.addView(topBar, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        int ripple = resolveAttr(android.R.attr.selectableItemBackgroundBorderless);
-
-        backButton = new ImageButton(this);
-        backButton.setImageResource(R.drawable.ic_arrow_back_24);
-        backButton.setColorFilter(colorOf(R.color.icon_tint));
-        backButton.setBackgroundResource(ripple);
-        backButton.setContentDescription(getString(R.string.action_back));
-        backButton.setOnClickListener(v -> handleWebBackNavigation());
-        topBar.addView(backButton, new LinearLayout.LayoutParams(dp(48), dp(48)));
-
-        TextView title = new TextView(this);
-        title.setText(R.string.app_name);
-        title.setTextSize(18); // SP — scales with the user's font preference
-        title.setTextColor(colorOf(R.color.title_text));
-        title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
-        title.setSingleLine(true);
-        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        title.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        titleParams.setMarginStart(dp(12));
-        topBar.addView(title, titleParams);
-
-        ImageButton refresh = new ImageButton(this);
-        refresh.setImageResource(R.drawable.ic_refresh_24);
-        refresh.setColorFilter(colorOf(R.color.icon_tint));
-        refresh.setBackgroundResource(ripple);
-        refresh.setContentDescription(getString(R.string.action_refresh));
-        refresh.setOnClickListener(v -> {
-            hideErrorOverlay();
-            webView.reload();
-        });
-        topBar.addView(refresh, new LinearLayout.LayoutParams(dp(48), dp(48)));
-
-        ImageButton tools = new ImageButton(this);
-        tools.setImageResource(R.drawable.ic_more_vert_24);
-        tools.setColorFilter(colorOf(R.color.icon_tint));
-        tools.setBackgroundResource(ripple);
-        tools.setContentDescription(getString(R.string.action_tools));
-        tools.setOnClickListener(v -> showToolsMenu());
-        toolsButton = tools;
-
-        // The badge is a sibling of the button inside a wrapper, so it sits in
-        // the corner without touching the button's own 48dp touch target.
-        FrameLayout toolsWrap = new FrameLayout(this);
-        toolsWrap.addView(tools, new FrameLayout.LayoutParams(dp(48), dp(48)));
-
-        GradientDrawable dot = new GradientDrawable();
-        dot.setShape(GradientDrawable.OVAL);
-        dot.setColor(colorOf(R.color.brand_a));
-
-        updateBadge = new View(this);
-        updateBadge.setBackground(dot);
-        updateBadge.setVisibility(View.GONE);
-
-        FrameLayout.LayoutParams badgeParams = new FrameLayout.LayoutParams(dp(9), dp(9));
-        badgeParams.gravity = Gravity.TOP | Gravity.END;
-        badgeParams.topMargin = dp(10);
-        badgeParams.rightMargin = dp(10);
-        toolsWrap.addView(updateBadge, badgeParams);
-
-        topBar.addView(toolsWrap, new LinearLayout.LayoutParams(dp(48), dp(48)));
-
-        // Hairline divider under the top bar.
-        View divider = new View(this);
-        divider.setBackgroundColor(colorOf(R.color.divider));
-        content.addView(divider, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(1)));
-    }
-
     /**
-     * THE FIX for the tab-bar bug in the original APK: the dock is a proper
-     * {@link HorizontalScrollView} whose chips are wrap-content with generous
-     * horizontal padding. Labels are single-line but never ellipsized and never
-     * fixed-width, so "Control" (or any future label) can never be clipped at any
-     * screen width or density — the row simply scrolls. chipToVisible() keeps the
-     * active tab on screen, including on very small phones.
-     */
-    private void buildDock(LinearLayout content) {
-        View divider = new View(this);
-        divider.setBackgroundColor(colorOf(R.color.divider));
-        content.addView(divider, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(1)));
-
-        dockScroller = new HorizontalScrollView(this);
-        dockScroller.setHorizontalScrollBarEnabled(false);
-        dockScroller.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        dockScroller.setClipToPadding(false); // let chips scroll into the gesture-nav inset
-        dockScroller.setBackgroundColor(colorOf(R.color.surface_topbar));
-
-        dockRow = new LinearLayout(this);
-        dockRow.setOrientation(LinearLayout.HORIZONTAL);
-        dockRow.setGravity(Gravity.CENTER_VERTICAL);
-        dockScroller.addView(dockRow);
-
-        for (int i = 0; i < DOCK_URLS.length; i++) {
-            dockChips[i] = buildDockChip(i);
-            dockRow.addView(dockChips[i]);
-        }
-
-        content.addView(dockScroller, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-    }
-
-    private TextView buildDockChip(final int index) {
-        TextView chip = new TextView(this);
-        chip.setText(DOCK_LABELS[index]);
-        chip.setTextSize(14); // SP
-        chip.setTypeface(chip.getTypeface(), android.graphics.Typeface.BOLD);
-        chip.setSingleLine(true);
-        chip.setGravity(Gravity.CENTER);
-        chip.setMinHeight(dp(48));               // ≥48dp touch target at every density
-        chip.setPadding(dp(18), 0, dp(18), 0);
-        chip.setForeground(ContextCompat.getDrawable(this, resolveAttr(android.R.attr.selectableItemBackground)));
-        chip.setOnClickListener(v -> {
-            // Light tick on tab switches — same feedback family as the menu.
-            try {
-                if (Build.VERSION.SDK_INT >= 27) {
-                    chip.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP,
-                            HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
-                } else {
-                    chip.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
-                }
-            } catch (Exception ignored) {
-                // Haptics are a nicety — never a crash.
-            }
-            loadTab(index);
-        });
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        if (index < DOCK_URLS.length - 1) params.setMarginEnd(dp(8));
-        chip.setLayoutParams(params);
-        styleChip(chip, false);
-        return chip;
-    }
-
-    /** Selected = live theme gradient; unselected = glassy chip with a soft stroke. */
-    private void styleChip(TextView chip, boolean selected) {
-        GradientDrawable bg;
-        if (selected) {
-            bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR, ThemeManager.gradient(this));
-            chip.setTextColor(colorOf(R.color.chip_text_selected));
-        } else {
-            bg = new GradientDrawable();
-            bg.setColor(colorOf(R.color.chip_bg));
-            bg.setStroke(dp(1), colorOf(R.color.chip_stroke));
-            chip.setTextColor(colorOf(R.color.chip_text));
-        }
-        bg.setCornerRadius(dp(24));
-        chip.setBackground(bg);
-    }
-
-    /**
-     * Only restyles the chip(s) whose selected state actually changes.
-     * {@code onPageLoadStarted}/{@code onPageLoadFinished} call this on every
-     * navigation event (redirects, in-page link taps, etc.), so re-allocating
-     * a {@link GradientDrawable} and re-invalidating all 7 chips every single
-     * time — even when the active tab hasn't changed — was pure wasted work.
-     */
-    private void selectDock(int index, boolean animate) {
-        if (index < 0 || index >= DOCK_URLS.length) index = TAB_HOME;
-        int previous = selectedDock;
-        selectedDock = index;
-        if (previous != index && previous >= 0 && previous < dockChips.length) {
-            TextView old = dockChips[previous];
-            old.animate().cancel();
-            old.setScaleX(1f);
-            old.setScaleY(1f);
-            styleChip(old, false);
-        }
-        if (previous != index) {
-            final TextView chip = dockChips[index];
-            chip.animate().cancel();
-            chip.setScaleX(1f);
-            chip.setScaleY(1f);
-            styleChip(chip, true);
-            if (animate && !ThemeManager.isReduceMotion(this)) {
-                // Animator-driven pulse — choreographed, not a fixed-frame hack.
-                chip.animate().scaleX(1.07f).scaleY(1.07f).setDuration(110)
-                        .withEndAction(() -> chip.animate()
-                                .scaleX(1f).scaleY(1f).setDuration(130).start())
-                        .start();
-            }
-        }
-        chipToVisible(index);
-    }
-
-    private void chipToVisible(int index) {
-        dockScroller.post(() -> {
-            View chip = dockChips[index];
-            int target = chip.getLeft() - dp(24);
-            dockScroller.smoothScrollTo(Math.max(target, 0), 0);
-        });
-    }
-
-    private void loadTab(int index) {
-        String target = DOCK_URLS[index];
-        // Avoid a full WebView reload when the user taps the tab they're already on.
-        if (index == selectedDock && target.equals(webView.getUrl())) return;
-        selectDock(index, true);
-        loadUrlInternal(target);
-    }
-
-    private void loadUrlInternal(String url) {
-        hideErrorOverlay();
-        webView.loadUrl(url);
-    }
-
-    /** Highlights the chip matching the loaded host (kept in sync on navigation). */
-    private int indexForUrl(String url) {
-        if (url == null) return selectedDock;
-        Uri uri = Uri.parse(url);
-        String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(java.util.Locale.US);
-        // Exact match only — a substring/contains() check here would be
-        // vacuously true for an empty host and could false-match any real
-        // domain that happens to be a substring of ASSETS_ORIGIN.
-        if (ASSETS_HOST.equals(host)) return TAB_HOME;
-        String path = uri.getPath() == null ? "" : uri.getPath();
-        switch (host) {
-            case "billing.victuscloud.com": return 2;
-            case "control.victuscloud.com": return 3;
-            case "drive.victuscloud.com":   return 4;
-            case "victuscloud.com":
-            case "www.victuscloud.com":
-                if (path.startsWith("/support")) return 5;
-                if (path.startsWith("/status"))  return 6;
-                return 1;
-            default:
-                return selectedDock; // external page — leave selection untouched
-        }
-    }
-
-    /**
-     * Edge-to-edge done right: the status-bar inset goes to the top bar and the
-     * gesture-nav/IME inset goes to the dock, measured from WindowInsets instead
-     * of hardcoded padding.
+     * Edge-to-edge without a native bar: the app draws behind both system bars
+     * and the web menu (which pads itself with {@code pb-safe} and its own safe
+     * areas) owns the insets. The shell only keeps the status-bar icons on the
+     * themed contrast — EdgeToEdge already handles that via the night-mode
+     * configuration folded in by {@link #attachBaseContext}.
      */
     private void applyWindowInsets() {
         ViewCompat.setOnApplyWindowInsetsListener(rootView, (v, insets) -> {
             Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars()
                     | WindowInsetsCompat.Type.displayCutout());
-            Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
-
-            topBar.setPadding(dp(8), dp(6) + bars.top, dp(8), dp(6));
-            dockScroller.setPadding(dp(10), dp(8), dp(10),
-                    dp(10) + Math.max(bars.bottom, ime.bottom));
+            // Progress bar sits below the status bar/cutout so it never hides
+            // behind a notch on devices that extend the display into the cutout.
+            FrameLayout.LayoutParams progressParams =
+                    (FrameLayout.LayoutParams) pageProgress.getLayoutParams();
+            progressParams.topMargin = bars.top;
+            pageProgress.setLayoutParams(progressParams);
             return insets;
         });
     }
@@ -749,7 +512,7 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
 
     @Override
     public void onPageLoadStarted(String url) {
-        // Only the bundled page may use the auth half of the bridge; the dock can
+        // Only the bundled page may use the auth half of the bridge; the menu can
         // navigate this same WebView to victuscloud.com, and those pages must not
         // inherit the app's panel session.
         bundledAppForeground = url != null && url.startsWith(ASSETS_ORIGIN);
@@ -760,7 +523,6 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         pageProgress.setProgress(0);
         pullRefresh.setRefreshing(false); // a finished load also ends any refresh gesture
         pullRefresh.setEnabled(isRefreshableUrl(url));
-        selectDock(indexForUrl(url), false);
     }
 
     @Override
@@ -768,9 +530,6 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         pageProgress.animate().alpha(0f).setDuration(220)
                 .withEndAction(() -> pageProgress.setVisibility(View.GONE)).start();
         pullRefresh.setRefreshing(false); // both load-finished and refresh-finished
-        backButton.setEnabled(webView != null && webView.canGoBack());
-        backButton.setAlpha(backButton.isEnabled() ? 1f : 0.38f);
-        selectDock(indexForUrl(url), false);
         injectThemeIntoWebView(); // seed the saved accent theme before the page reads it
     }
 
@@ -828,86 +587,18 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         });
     }
 
-    /** Points the tools button at the version a background check found. */
+    /**
+     * Re-reads whatever the last background update check found.
+     *
+     * <p>There is no native badge any more — the single web menu shows the update
+     * marker itself, reading the same answer through {@code shellUiState()}. This
+     * now only refreshes the native update sheets, which is what still exists
+     * natively.</p>
+     */
     void refreshUpdateUi() {
         String available = UpdateChecker.availableVersionName(this);
-
         if (updateBadge != null) {
             updateBadge.setVisibility(available == null ? View.GONE : View.VISIBLE);
-        }
-        if (toolsButton != null) {
-            toolsButton.setContentDescription(available == null
-                    ? getString(R.string.action_tools)
-                    : getString(R.string.tools_update_available, available));
-        }
-    }
-
-    /** The "Tools" overflow menu — dark glass card anchored to the ⋮ button. */
-    void showToolsMenu() {
-        if (toolsButton == null) return;
-        ToolsMenu.show(this, toolsButton);
-    }
-
-    void onToolSelected(int which) {
-        String current = webView.getUrl() == null ? HOME_URL : webView.getUrl();
-        switch (which) {
-            case ToolsMenu.TOOL_SETTINGS: // settings / appearance
-                SettingsSheet.show(this);
-                break;
-            case ToolsMenu.TOOL_OPEN_BROWSER: { // open in browser
-                Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(current));
-                intent.addCategory(Intent.CATEGORY_BROWSABLE);
-                try {
-                    startActivity(intent);
-                } catch (Exception e) {
-                    toast(getString(R.string.no_app_to_handle));
-                }
-                break;
-            }
-            case ToolsMenu.TOOL_COPY_LINK: { // copy link
-                ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-                if (cm != null) {
-                    cm.setPrimaryClip(ClipData.newPlainText("Victus Cloud", current));
-                    toast(getString(R.string.link_copied));
-                }
-                break;
-            }
-            case ToolsMenu.TOOL_SHARE_LINK: { // share link
-                try {
-                    Intent send = new Intent(Intent.ACTION_SEND)
-                            .setType("text/plain")
-                            .putExtra(Intent.EXTRA_TEXT, current);
-                    startActivity(Intent.createChooser(send, null));
-                } catch (Exception e) {
-                    toast(getString(R.string.no_app_to_handle));
-                }
-                break;
-            }
-            case ToolsMenu.TOOL_TEST_PANEL:
-                // testpanel.victuscloud.com no longer resolves (NXDOMAIN since the
-                // .xyz → .com migration); send people to the knowledgebase instead.
-                loadUrlInternal("https://victuscloud.com/knowledgebase");
-                break;
-            case ToolsMenu.TOOL_SUPPORT:
-                loadTab(5); // Support
-                break;
-            case ToolsMenu.TOOL_STATUS:
-                loadTab(6); // Status
-                break;
-            case ToolsMenu.TOOL_MARKETPLACE:
-                loadUrlInternal("https://victuscloud.com/marketplace");
-                break;
-            case ToolsMenu.TOOL_DEVICE_COMPAT: // ROM / WebView / keystore diagnostics
-                CompatSheet.show(this);
-                break;
-            case ToolsMenu.TOOL_UPDATES:
-                UpdateSheet.show(this);
-                break;
-            case ToolsMenu.TOOL_CLEAR_SESSION:
-                confirmClearSession();
-                break;
-            default:
-                break;
         }
     }
 
@@ -935,7 +626,6 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
                     webView.clearMatches();
                     // Drop the back/forward list too: clearing the session means
                     // "fresh start", not "reload the old page from memory".
-                    selectDock(TAB_HOME, false);
                     webView.loadUrl(HOME_URL);
                     toast(getString(R.string.clear_session_done));
                 })
@@ -1030,22 +720,6 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         });
         box.addView(home, homeParams);
 
-        errorProceedButton = buildOverlayButton(getString(R.string.action_proceed_anyway), false);
-        LinearLayout.LayoutParams proceedParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        proceedParams.topMargin = dp(10);
-        errorProceedButton.setOnClickListener(v -> {
-            ThemeManager.setTrustVictusSsl(this, true);
-            if (pendingSslHandler != null) {
-                pendingSslHandler.proceed();
-                pendingSslHandler = null;
-            }
-            hideErrorOverlay();
-            toast(getString(R.string.ssl_proceed_accepted));
-        });
-        errorProceedButton.setVisibility(View.GONE);
-        box.addView(errorProceedButton, proceedParams);
-
         errorWebViewUpdateLink = new TextView(this);
         errorWebViewUpdateLink.setText(R.string.action_update_webview);
         errorWebViewUpdateLink.setTextSize(13); // SP
@@ -1061,6 +735,26 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         updateLinkParams.topMargin = dp(8);
         box.addView(errorWebViewUpdateLink, updateLinkParams);
+
+        // The second real cause of a certificate error the device cannot verify is
+        // its own clock. A wrong date makes a perfectly good certificate look
+        // not-yet-valid or expired, so this link opens the settings screen that
+        // fixes it rather than offering a way past the check.
+        errorDateTimeLink = new TextView(this);
+        errorDateTimeLink.setText(R.string.action_fix_date_time);
+        errorDateTimeLink.setTextSize(13); // SP
+        errorDateTimeLink.setTypeface(errorDateTimeLink.getTypeface(), android.graphics.Typeface.BOLD);
+        errorDateTimeLink.setTextColor(ThemeManager.solid(this));
+        errorDateTimeLink.setGravity(Gravity.CENTER);
+        errorDateTimeLink.setMinHeight(dp(40));
+        errorDateTimeLink.setPaintFlags(errorDateTimeLink.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG);
+        errorDateTimeLink.setForeground(ContextCompat.getDrawable(this, resolveAttr(android.R.attr.selectableItemBackground)));
+        errorDateTimeLink.setVisibility(View.GONE);
+        errorDateTimeLink.setOnClickListener(v -> openDateTimeSettings());
+        LinearLayout.LayoutParams dateTimeLinkParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        dateTimeLinkParams.topMargin = dp(2);
+        box.addView(errorDateTimeLink, dateTimeLinkParams);
 
         rootView.addView(errorOverlay, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -1098,17 +792,13 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
 
     /**
      * Applies the currently selected theme (preset or custom) to every native
-     * accent surface — dock chips, progress bar tint, error glyph/retry button
-     * — and, if the bundled home screen is currently loaded, live-updates its
-     * CSS variables via a tiny injected script. Nothing here recreates the
-     * Activity or reloads the WebView, so switching themes is effectively free.
+     * accent surface — progress bar tint, error glyph/retry button — and, if the
+     * bundled home screen is currently loaded, live-updates its CSS variables
+     * via a tiny injected script (the web menu re-themes itself through the
+     * {@code victus:theme} event). Nothing here recreates the Activity or
+     * reloads the WebView, so switching themes is effectively free.
      */
     void applyDynamicAccent() {
-        if (dockChips[0] != null) {
-            for (int i = 0; i < dockChips.length; i++) {
-                styleChip(dockChips[i], i == selectedDock);
-            }
-        }
         if (pageProgress != null) {
             pageProgress.setProgressTintList(ColorStateList.valueOf(ThemeManager.solid(this)));
         }
@@ -1123,6 +813,9 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         }
         if (errorWebViewUpdateLink != null) {
             errorWebViewUpdateLink.setTextColor(ThemeManager.solid(this));
+        }
+        if (errorDateTimeLink != null) {
+            errorDateTimeLink.setTextColor(ThemeManager.solid(this));
         }
         injectThemeIntoWebView();
     }
@@ -1203,8 +896,8 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
             pendingSslHandler.cancel();
             pendingSslHandler = null;
         }
-        if (errorProceedButton != null) errorProceedButton.setVisibility(View.GONE);
         errorWebViewUpdateLink.setVisibility(View.GONE);
+        errorDateTimeLink.setVisibility(View.GONE);
         displayErrorOverlay(message + "\n" + getString(R.string.error_offline_hint), failingUrl);
     }
 
@@ -1215,8 +908,12 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
      * connection" hint is skipped. When {@code offerWebViewUpdate} is true —
      * currently for SSL_UNTRUSTED/SSL_NOTYETVALID, the two codes most often
      * caused by a stale Android System WebView or a wrong device clock rather
-     * than a real attack — an "Update WebView" shortcut to the Play Store is
-     * shown underneath the buttons.
+     * than a real attack — an "Update WebView" shortcut to the Play Store and a
+     * "Fix date &amp; time" shortcut to the system settings are shown underneath
+     * the buttons.
+     *
+     * <p>There is no "proceed anyway": the connection is always cancelled and the
+     * user is shown how to fix the device instead.</p>
      */
     @Override
     public void showSslError(android.webkit.SslErrorHandler handler, String message, String failingUrl,
@@ -1225,10 +922,10 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
             pendingSslHandler.cancel();
         }
         pendingSslHandler = handler;
-        if (errorProceedButton != null) {
-            errorProceedButton.setVisibility(isInternalHost ? View.VISIBLE : View.GONE);
-        }
         errorWebViewUpdateLink.setVisibility(offerWebViewUpdate ? View.VISIBLE : View.GONE);
+        // A clock the device cannot trust is a plausible cause of every
+        // certificate code, so this fix is always one tap away.
+        errorDateTimeLink.setVisibility(View.VISIBLE);
         displayErrorOverlay(message, failingUrl);
     }
 
@@ -1354,6 +1051,24 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         params.topMargin = dp(10);
         button.setLayoutParams(params);
         return button;
+    }
+
+    /**
+     * Opens the system's date &amp; time settings.
+     *
+     * <p>A phone whose clock has drifted reports a perfectly valid certificate as
+     * expired or not-yet-valid, which is exactly the "error 3 / error 0" report
+     * this screen exists for. Nothing here weakens the certificate check — it
+     * fixes the one device setting that makes the check fail.</p>
+     */
+    private void openDateTimeSettings() {
+        try {
+            Intent intent = new Intent(android.provider.Settings.ACTION_DATE_SETTINGS);
+            intent.addCategory(Intent.CATEGORY_DEFAULT);
+            startActivity(intent);
+        } catch (Exception no_settings) {
+            toast(getString(R.string.no_app_to_handle));
+        }
     }
 
     private void openWebViewUpdatePage() {
@@ -1522,15 +1237,176 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         filePathCallback = null;
     }
 
+    // ================================================================== admin areas
+
+    /** Immutable snapshot of which admin areas the account may use. */
+    private static final class AdminAreaState {
+        final String[] areas;
+
+        AdminAreaState(String[] areas) {
+            this.areas = areas == null ? new String[0] : areas;
+        }
+    }
+
+    /**
+     * The admin areas this release knows about. Each entry is a base URL the
+     * account must be allowed to use; the panel enforces the actual permission
+     * on every request — a client-side "yes" here only decides whether the app
+     * shows the view-toggle, it never grants anything.
+     *
+     * <p>If Victus adds more admin surfaces, add their base URLs here and to the
+     * web menu's mapping — nothing else needs to change.</p>
+     */
+    private static final String[] KNOWN_ADMIN_AREAS = {
+            "https://control.victuscloud.com/admin",
+    };
+
+    /** Latest admin-area snapshot; null until the first silent check completes. */
+    private final java.util.concurrent.atomic.AtomicReference<AdminAreaState> adminAreas =
+            new java.util.concurrent.atomic.AtomicReference<>(null);
+
+    /**
+     * Silently re-checks which admin areas the signed-in account may use. Runs
+     * on the serial auth thread, touches no UI, shows no spinner, logs nothing.
+     * A failure (offline, panel busy) simply leaves the previous snapshot in
+     * place — the panel re-validates every admin request anyway, so a stale
+     * toggle can at worst show a button whose page then says "no permission".
+     */
+    /**
+     * Reads the freshly probed account and keeps only the areas the panel
+     * actually flagged this account for. Run on the auth thread after the
+     * account fetch; never touches the UI thread.
+     */
+    void startAdminAreaCheck() {
+        final VictusAuth auth = victusAuth;
+        if (auth == null || !auth.isSignedIn()) {
+            adminAreas.set(new AdminAreaState(new String[0]));
+            return;
+        }
+        authIo.execute(() -> {
+            VictusHttp.Response account = auth.apiGet(VictusApi.PATH_ACCOUNT);
+            VictusApi.Account parsed = VictusApi.parseAccount(account.body);
+            if (parsed == null || !parsed.rootAdmin) {
+                // Not an admin (or the check failed): an empty list means the
+                // web menu renders nothing admin-related at all.
+                adminAreas.set(new AdminAreaState(new String[0]));
+                return;
+            }
+            adminAreas.set(new AdminAreaState(KNOWN_ADMIN_AREAS));
+        });
+    }
+
     // ================================================================== misc
+
+    /** Records which tab the shell itself navigated to (see {@link #selectedDock}). */
+    void markDockSelection(String url) {
+        if (url == null) return;
+        String host = Uri.parse(url).getHost() == null ? ""
+                : Uri.parse(url).getHost().toLowerCase(java.util.Locale.US);
+        String path = Uri.parse(url).getPath() == null ? "" : Uri.parse(url).getPath();
+        if (ASSETS_HOST.equals(host)) selectedDock = TAB_HOME;
+        else if (host.equals("billing.victuscloud.com")) selectedDock = TAB_BILLING;
+        else if (host.equals("control.victuscloud.com")) selectedDock = TAB_CONTROL;
+        else if (host.equals("drive.victuscloud.com")) selectedDock = TAB_DRIVE;
+        // TAB_DRIVE is declared next to its siblings above.
+        else if (host.equals("victuscloud.com") || host.equals("www.victuscloud.com")) {
+            if (path.startsWith("/support")) selectedDock = TAB_SUPPORT;
+            else if (path.startsWith("/status")) selectedDock = TAB_STATUS;
+            else selectedDock = TAB_WEBSITE;
+        }
+    }
+
+    /** The URL currently loaded in the shell's WebView (never null). */
+    String currentPageUrl() {
+        return webView != null && webView.getUrl() != null ? webView.getUrl() : HOME_URL;
+    }
+
+    /**
+     * Snapshot for the web menu: update availability + the admin view-toggle
+     * state for the page currently loaded. Pure reads, no I/O — safe to call
+     * from JavaScript at any time.
+     */
+    String shellUiStateJson() {
+        org.json.JSONObject json = new org.json.JSONObject();
+        try {
+            json.put("updateAvailable", UpdateChecker.availableVersionName(this) != null);
+            String available = UpdateChecker.availableVersionName(this);
+            json.put("updateVersion", available == null ? "" : available);
+            json.put("currentUrl", currentPageUrl());
+            json.put("canGoBack", webView != null && webView.canGoBack());
+            json.put("reduceMotion", ThemeManager.isReduceMotion(this));
+            org.json.JSONArray areas = new org.json.JSONArray();
+            AdminAreaState snapshot = adminAreas.get();
+            if (snapshot != null && adminAreaAppliesToCurrentPage(snapshot)) {
+                for (String area : snapshot.areas) {
+                    areas.put(area);
+                }
+            }
+            json.put("adminAreas", areas);
+        } catch (Exception never) {
+            // JSON with fixed keys cannot throw here.
+        }
+        return json.toString();
+    }
+
+    /**
+     * The admin areas this signed-in account may use, as JSON for the bridge.
+     * Empty array for non-admins — the web menu renders nothing at all for them.
+     */
+    String adminAreasJson() {
+        org.json.JSONArray areas = new org.json.JSONArray();
+        AdminAreaState snapshot = adminAreas.get();
+        if (snapshot != null) {
+            for (String area : snapshot.areas) {
+                areas.put(area);
+            }
+        }
+        return areas.toString();
+    }
+
+    /**
+     * Whether any of the account's admin areas matches the page on screen right
+     * now — the toggle is per-area and only appears on that area's own pages.
+     */
+    private boolean adminAreaAppliesToCurrentPage(AdminAreaState snapshot) {
+        if (snapshot.areas.length == 0) return false;
+        Uri uri = Uri.parse(currentPageUrl());
+        String host = uri.getHost() == null ? ""
+                : uri.getHost().toLowerCase(java.util.Locale.US);
+        String path = uri.getPath() == null ? "" : uri.getPath().toLowerCase(java.util.Locale.US);
+        for (String area : snapshot.areas) {
+            Uri areaUri = Uri.parse(area);
+            String areaHost = areaUri.getHost() == null ? ""
+                    : areaUri.getHost().toLowerCase(java.util.Locale.US);
+            String areaPath = areaUri.getPath() == null ? ""
+                    : areaUri.getPath().toLowerCase(java.util.Locale.US);
+            if (host.equals(areaHost) && (areaPath.isEmpty() || path.startsWith(areaPath))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void loadUrlInternal(String url) {
+        hideErrorOverlay();
+        webView.loadUrl(url);
+    }
+
+    private void loadTab(int index) {
+        String target = DOCK_URLS[index];
+        // Avoid a full WebView reload when the page is already there.
+        if (target.equals(webView.getUrl())) return;
+        selectedDock = index;
+        loadUrlInternal(target);
+    }
 
     /** WebView history → (error overlay → Home) → Home tab → exit. Predictive-back safe. */
     private boolean handleWebBackNavigation() {
         if (errorOverlay != null && errorOverlay.getVisibility() == View.VISIBLE) {
             hideErrorOverlay();
             // Don't stare at a blank failed page — retreat to Home instead.
-            if (selectedDock == TAB_HOME) loadUrlInternal(HOME_URL);
-            else loadTab(TAB_HOME);
+            loadUrlInternal(HOME_URL);
+            selectedDock = TAB_HOME;
             return true;
         }
         if (webView != null && webView.canGoBack()) {
@@ -1584,6 +1460,131 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
                 if (activity.isFinishing() || activity.isDestroyed()) return;
                 activity.showInAppBrowser(target, label);
             });
+        }
+
+        /**
+         * Shell state the single (web) menu wants to show: whether an app update
+         * is available and whether the admin view-toggle applies to the page
+         * currently loaded. Synchronous — a pure snapshot, no I/O, so it is safe
+         * to call from JS at any moment.
+         */
+        @JavascriptInterface
+        public String shellUiState() {
+            return activity.shellUiStateJson();
+        }
+
+        /** System back: walks WebView history like the gesture does. */
+        @JavascriptInterface
+        public void shellBack() {
+            activity.runOnUiThread(() -> {
+                if (activity.isFinishing() || activity.isDestroyed()) return;
+                activity.handleWebBackNavigation();
+            });
+        }
+
+        /** Reload the current page — the web header's refresh button. */
+        @JavascriptInterface
+        public void shellRefresh() {
+            activity.runOnUiThread(() -> {
+                if (activity.isFinishing() || activity.isDestroyed()) return;
+                activity.hideErrorOverlay();
+                if (activity.webView != null) activity.webView.reload();
+            });
+        }
+
+        /**
+         * Navigate the shell's WebView to an allowlisted Victus URL — how the
+         * single web menu's channel chips drive the shell.
+         */
+        @JavascriptInterface
+        public void shellNavigate(String url) {
+            final String target = InAppLinks.toInAppHttpsUrl(url);
+            if (target == null) return;
+            activity.runOnUiThread(() -> {
+                if (activity.isFinishing() || activity.isDestroyed()) return;
+                activity.markDockSelection(target);
+                activity.loadUrlInternal(target);
+            });
+        }
+
+        /**
+         * Opens the native Appearance sheet (the glass one) on top of the web
+         * menu — the ported Tools → Settings entry.
+         */
+        @JavascriptInterface
+        public void shellOpenNativeMenu(String which) {
+            activity.runOnUiThread(() -> {
+                if (activity.isFinishing() || activity.isDestroyed()) return;
+                if ("updates".equals(which)) {
+                    UpdateSheet.show(activity);
+                } else if ("device".equals(which)) {
+                    CompatSheet.show(activity);
+                } else {
+                    SettingsSheet.show(activity);
+                }
+            });
+        }
+
+        /**
+         * Wipes WebView cookies/storage/cache after the web menu's own
+         * confirmation modal — the ported Tools → Clear app session.
+         */
+        @JavascriptInterface
+        public void shellClearSession() {
+            activity.runOnUiThread(() -> {
+                if (activity.isFinishing() || activity.isDestroyed()) return;
+                activity.confirmClearSession();
+            });
+        }
+
+        /**
+         * "Open in browser" for the CURRENT shell page (the ported Tools entry).
+         * Hands the page's own URL to the device browser; no data crosses here.
+         */
+        @JavascriptInterface
+        public void shellOpenExternal() {
+            final String current = activity.currentPageUrl();
+            final String target = InAppLinks.toExternalHttpsUrl(current);
+            if (target == null) return;
+            activity.runOnUiThread(() -> {
+                if (activity.isFinishing() || activity.isDestroyed()) return;
+                try {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(target));
+                    intent.addCategory(Intent.CATEGORY_BROWSABLE);
+                    activity.startActivity(intent);
+                } catch (Exception e) {
+                    Toast.makeText(activity, R.string.no_app_to_handle, Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+
+        /**
+         * Which admin areas (if any) the signed-in account may use. The web menu
+         * shows the admin view-toggle only for areas listed here; a normal user
+         * gets an empty list and never sees anything admin-related.
+         */
+        @JavascriptInterface
+        public String shellAdminAreas() {
+            return activity.adminAreasJson();
+        }
+
+        /**
+         * The authenticator's 30-second window, on the panel's clock.
+         *
+         * <p>Synchronous and side-effect free: it only reports seconds remaining,
+         * whether a real server sample has been taken, and by how much the device
+         * clock differs from the panel's. No code, no secret and no account data
+         * crosses here — the sign-in screen uses it to show exactly when the next
+         * code begins, so a wrong phone clock cannot cause a rejection.</p>
+         */
+        @JavascriptInterface
+        public String authTotpState() {
+            VictusAuth auth = activity.victusAuth;
+            if (auth == null) {
+                return "{\"secondsRemaining\":30,\"millisUntilNext\":30000,"
+                        + "\"periodSeconds\":30,\"synced\":false,\"offsetMillis\":0}";
+            }
+            return auth.totpStateJson();
         }
 
         /** "Open in browser": hands an https page to the device browser. */
@@ -1760,6 +1761,11 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
                 payload = task.run();
             } catch (Exception failure) {
                 payload = bridgeError("Couldn't complete that: " + failure.getClass().getSimpleName());
+            }
+            // A fresh session may carry a different role: probe the admin areas
+            // once, in the background, before handing the reply to the page.
+            if (payload.contains("\"state\":\"signed_in\"")) {
+                startAdminAreaCheck();
             }
             deliverAuthResult(callbackId, payload);
         });
