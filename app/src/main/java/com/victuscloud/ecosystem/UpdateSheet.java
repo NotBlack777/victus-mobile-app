@@ -81,7 +81,22 @@ final class UpdateSheet {
         this.activity = activity;
     }
 
+    /**
+     * Whether an update sheet is on screen right now.
+     *
+     * <p>The sheet is opened from two independent places — the tools menu and the
+     * automatic prompt that fires after a background release check — and two
+     * dialogs at once would sit on top of each other. The sheet therefore
+     * publishes its own state rather than letting either caller guess.</p>
+     */
+    private static volatile boolean visible = false;
+
+    static boolean isShowing() {
+        return visible;
+    }
+
     static void show(Activity activity) {
+        if (visible) return;
         new UpdateSheet(activity).open();
     }
 
@@ -102,6 +117,7 @@ final class UpdateSheet {
             window.setAttributes(params);
         }
         dialog.setOnDismissListener(d -> {
+            visible = false;
             try {
                 Shizuku.removeRequestPermissionResultListener(permissionListener);
             } catch (Throwable ignored) {
@@ -109,6 +125,7 @@ final class UpdateSheet {
             }
         });
         dialog.show();
+        visible = true;
 
         try {
             Shizuku.addRequestPermissionResultListener(permissionListener);

@@ -2,27 +2,14 @@
 <resources>
     <string name="app_name">Victus Cloud</string>
 
-    <string name="tab_home">Home</string>
-    <string name="tab_website">Website</string>
-    <string name="tab_billing">Billing</string>
-    <string name="tab_control">Control</string>
-    <string name="tab_drive">Drive</string>
-    <string name="tab_support">Support</string>
-    <string name="tab_status">Status</string>
-
-    <string name="action_back">Back</string>
-    <string name="action_refresh">Refresh</string>
-    <string name="action_tools">Tools</string>
-
-    <string name="tools_open_browser">Open in browser</string>
-    <string name="tools_copy_link">Copy link</string>
-    <string name="tools_share_link">Share link</string>
-    <string name="tools_test_panel">Open test panel</string>
-    <string name="tools_support">Support</string>
-    <string name="tools_status">System status</string>
-    <string name="tools_marketplace">Marketplace</string>
-    <string name="tools_clear_session">Clear app session</string>
-    <string name="tools_settings">Settings</string>
+    <!-- In-app browser surface (the live portal behind the app menu's
+         "Open site in app browser"; the portals cannot be framed, see
+         InAppBrowser). The header, channel chips and Tools menu all live in the
+         bundled web app, so no native chrome strings remain here. -->
+    <string name="browser_title">Victus Cloud</string>
+    <string name="browser_close">Close live view</string>
+    <string name="browser_reload">Reload this page</string>
+    <string name="browser_open_external">Open in browser</string>
 
     <string name="settings_title">Appearance</string>
     <string name="settings_subtitle">Personalize colors, gradients, and motion</string>
@@ -31,7 +18,37 @@
     <string name="settings_theme">Theme</string>
     <string name="settings_preset_purple_black">Purple → Black</string>
     <string name="settings_preset_blue_teal">Blue → Teal</string>
+    <string name="settings_preset_emerald">Emerald → Night</string>
+    <string name="settings_preset_ember">Ember → Night</string>
+    <string name="settings_preset_slate">Slate → Night</string>
     <string name="settings_preset_custom">Custom</string>
+
+    <string name="settings_background">Background</string>
+    <string name="settings_background_hint">Ambient backdrop behind the interface. Holds still when animations are reduced. Applies to the bundled home screen.</string>
+    <string name="settings_bg_aurora">Aurora</string>
+    <string name="settings_bg_aurora_hint">Drifting light fields</string>
+    <string name="settings_bg_mesh">Mesh</string>
+    <string name="settings_bg_mesh_hint">Scanned node grid</string>
+    <string name="settings_bg_starfield">Starfield</string>
+    <string name="settings_bg_starfield_hint">Particle drift</string>
+    <string name="settings_bg_none">Off</string>
+    <string name="settings_bg_none_hint">Flat background</string>
+
+    <string name="settings_ecosystem_title">Ecosystem</string>
+    <string name="settings_open_links_externally">Open links externally</string>
+    <string name="settings_open_links_externally_desc">Opens Victus Cloud URLs in your device browser instead of the in-app shell.</string>
+    <string name="settings_links_external_on">External links will open in your browser</string>
+    <string name="settings_links_external_off">External links will open in-app</string>
+
+    <string name="settings_panel">Display panel</string>
+    <string name="settings_panel_hint">OLED uses a true-black canvas so the pixels switch off. Standard keeps dark greys, which scroll more smoothly on LCD screens.</string>
+    <string name="settings_panel_oled">OLED</string>
+    <string name="settings_panel_standard">Standard</string>
+
+    <string name="settings_display_title">Display mode</string>
+    <string name="settings_display_dark">Dark</string>
+    <string name="settings_display_light">Light</string>
+    <string name="settings_display_system">System</string>
     <string name="settings_start_color">Start color</string>
     <string name="settings_end_color">End color</string>
     <string name="settings_solid_color">Solid color (no gradient)</string>
@@ -48,24 +65,29 @@
     <string name="color_picker_invalid_hex">Enter a valid hex color, e.g. #7C3AED</string>
 
     <string name="clear_session_title">Clear app session?</string>
-    <string name="clear_session_message">This clears WebView cookies, storage, cache, and panel sessions in the app.</string>
+    <string name="clear_session_message">This clears the app\'s local WebView data — cookies, site storage, cache, form history and back history — for a fresh start. Nothing is deleted from Victus Cloud servers or your account.</string>
     <string name="clear_session_confirm">Clear</string>
     <string name="clear_session_done">Session cleared</string>
     <string name="cancel">Cancel</string>
 
     <string name="error_title">Can\'t reach Victus Cloud</string>
     <string name="error_offline_hint">Check your connection, then try again.</string>
+    <string name="error_offline">No internet connection. Connect to Wi-Fi or mobile data, then try again.</string>
+    <string name="error_dns">That address could not be found. Check the link, or try again in a moment.</string>
+    <string name="error_timeout">The site took too long to answer. It may be busy — try again.</string>
+    <string name="error_refused">The site refused the connection. Try again in a moment.</string>
+    <string name="error_tls">The secure connection to that site could not be established.</string>
+    <string name="error_too_many_requests">Too many requests from this device. Wait a minute before trying again.</string>
+    <string name="error_generic">This page could not be loaded. Try again in a moment.</string>
     <string name="error_ssl_untrusted">Your device doesn\'t trust this site\'s security certificate (error 3). This is usually fixed by updating Android System WebView, or by checking that your device\'s date &amp; time are correct.</string>
     <string name="error_ssl_notyetvalid">This site\'s certificate isn\'t valid yet (error 0) — check that your device\'s date &amp; time are correct.</string>
     <string name="error_ssl_expired">This site\'s security certificate has expired (error 1).</string>
     <string name="error_ssl_mismatch">This site\'s security certificate doesn\'t match its address (error 2).</string>
     <string name="error_ssl_generic">Secure connection failed (certificate error %1$d). The page was blocked for your safety.</string>
     <string name="action_update_webview">Update WebView</string>
-    <string name="action_proceed_anyway">Proceed to Victus Cloud</string>
-    <string name="ssl_proceed_accepted">Victus Cloud certificate accepted</string>
+    <string name="action_fix_date_time">Check date &amp; time</string>
     <string name="settings_security_title">Security &amp; Network</string>
-    <string name="settings_trust_ssl">Trust Victus Cloud certificates</string>
-    <string name="settings_trust_ssl_desc">Allows connection when your device has an outdated root certificate store (fixes error 3).</string>
+    <string name="settings_security_note">Certificates are always verified — the app never bypasses a certificate check. If a page reports a certificate problem, it is fixed on the device: update Android System WebView, and check that date &amp; time is set automatically.</string>
     <string name="retry">Retry</string>
     <string name="go_home">Go home</string>
 
@@ -78,7 +100,6 @@
     <string name="no_app_to_handle">No app installed that can open this link</string>
 
     <!-- In-app updater -->
-    <string name="tools_check_updates">Check for updates</string>
     <string name="update_title">App updates</string>
     <string name="update_subtitle">Check, download and install a new build of Victus Cloud.</string>
     <string name="update_installed">Installed</string>
@@ -118,8 +139,7 @@
     <string name="update_method_installer">system UI</string>
     <string name="update_method_installer_locked">enable first</string>
     <string name="update_needs_unknown_sources">Allow \"install unknown apps\" for Victus Cloud, then try again.</string>
-    <!-- Tools-menu entry when a background check found a newer build. -->
-    <string name="tools_check_updates_available">Update available · v%s</string>
+    <!-- Menu entry when a background check found a newer build. -->
     <string name="tools_update_available">Check for updates — version %s available</string>
     <string name="update_shizuku_missing">Shizuku is not running. Start it, then tap Shizuku again.</string>
     <string name="update_shizuku_old">This Shizuku version is too old — please update the Shizuku app.</string>
@@ -135,6 +155,45 @@
         <item>Root</item>
         <item>Installer</item>
     </string-array>
+
+    <!-- Device & compatibility (custom ROMs: GrapheneOS, CalyxOS, LineageOS, …) -->
+    <string name="compat_title">Device &amp; compatibility</string>
+    <string name="compat_subtitle">What this app needs from your device — checked, not assumed.</string>
+    <string name="compat_section_os">System</string>
+    <string name="compat_section_engine">Web engine</string>
+    <string name="compat_section_security">Security &amp; storage</string>
+    <string name="compat_section_panel">Victus Cloud panel</string>
+    <string name="compat_row_build">Build</string>
+    <string name="compat_row_device">Device</string>
+    <string name="compat_row_webview">WebView provider</string>
+    <string name="compat_row_google">Google services</string>
+    <string name="compat_row_keystore">Encrypted storage</string>
+    <string name="compat_row_session">Session</string>
+    <string name="compat_ok">OK</string>
+    <string name="compat_warn">Limited</string>
+    <string name="compat_gms_present">Play Services installed</string>
+    <string name="compat_gms_absent">Not installed — not needed</string>
+    <string name="compat_keystore_ok">Keystore seal/open works</string>
+    <string name="compat_keystore_limited">Keystore unavailable — app-private storage only</string>
+    <string name="compat_session_key">Signed in with an app key</string>
+    <string name="compat_session_cookie">Signed in with a panel session</string>
+    <string name="compat_session_none">Not signed in</string>
+    <string name="compat_custom_rom_note">This is a community AOSP build. The app needs no Google services, so everything works here; the WebView is whatever your ROM ships.</string>
+    <string name="compat_test_connection">Test panel connection</string>
+    <string name="compat_test_running">Contacting control.victuscloud.com…</string>
+    <string name="compat_copy_report">Copy report</string>
+    <string name="compat_report_copied">Compatibility report copied</string>
+    <string name="compat_done">Done</string>
+
+    <!-- Missing/disabled WebView: some minimal custom ROMs ship none at all. -->
+    <string name="webview_missing_title">No web engine installed</string>
+    <string name="webview_missing_message">This device has no Android System WebView (or it is disabled), so the Victus Cloud interface cannot be drawn. Install one and the app will start normally — no data is lost.</string>
+    <string name="webview_missing_install_play">Install from Play Store</string>
+    <string name="webview_missing_install_fdroid">Install from F-Droid</string>
+    <string name="webview_missing_install_web">Open install page</string>
+    <string name="webview_missing_retry">Check again</string>
+    <!-- Vanadium / LineageOS WebView / CalyxOS Chromium ship with the ROM. -->
+    <string name="webview_updated_by_rom">%1$s is part of your ROM — update your system to update it.</string>
 
     <!-- Long-press launcher shortcuts -->
     <string name="shortcut_updates_short">Check for updates</string>

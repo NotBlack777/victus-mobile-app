@@ -10,7 +10,7 @@
  * lines instead of a copy-pasted block.
  */
 
-import { ThemePreset, BackgroundStyle } from '../types.ts';
+import { ThemePreset, BackgroundStyle, DisplayPanel } from '../types.ts';
 
 export type Tokens = {
   bg: string;
@@ -376,14 +376,72 @@ export function resolveAccents(
 export function resolveTokens(
   preset: ThemePreset,
   isDark: boolean,
-  accents: [string, string, string]
+  accents: [string, string, string],
+  panel: DisplayPanel = 'lcd'
 ): Tokens {
-  if (preset === 'custom') {
-    return customTokens(isDark, accents);
-  }
-  const definition = PRESETS[preset];
-  return { ...(isDark ? BASE_DARK : BASE_LIGHT), ...(isDark ? definition.dark : definition.light) };
+  const base =
+    preset === 'custom'
+      ? customTokens(isDark, accents)
+      : (() => {
+          const definition = PRESETS[preset];
+          return {
+            ...(isDark ? BASE_DARK : BASE_LIGHT),
+            ...(isDark ? definition.dark : definition.light),
+          };
+        })();
+
+  // True black is a dark-panel concern; in light mode it would just be a
+  // different off-white, so the standard tokens are kept.
+  return isDark && panel === 'oled' ? oledTokens(base, accents) : base;
 }
+
+/**
+ * True-black transform for OLED screens.
+ *
+ * Applied on top of whatever the preset already resolved, so every theme gets
+ * an OLED variant for free instead of needing a second table. On an OLED panel a
+ * lit near-black pixel still burns power, so the canvas drops to #000 and the
+ * surfaces are lifted only as far as they must be to stay readable — the
+ * separation between layers comes from borders and text contrast rather than
+ * from a grey wash, which is what keeps the panel looking deep instead of flat.
+ */
+export function oledTokens(tokens: Tokens, accents: [string, string, string]): Tokens {
+  const rgb1 = hexToRgb(accents[0]);
+  const rgb2 = hexToRgb(accents[1]);
+  return {
+    ...tokens,
+    bg: '#000000',
+    surfaceTopbar: 'rgba(6, 6, 10, 0.94)',
+    sheetBg: '#050507',
+    divider: 'rgba(255, 255, 255, 0.14)',
+    panel: 'rgba(255, 255, 255, 0.045)',
+    panelStrong: 'rgba(255, 255, 255, 0.075)',
+    line: `rgba(${rgb1}, 0.34)`,
+    lineSoft: 'rgba(255, 255, 255, 0.12)',
+    chipBg: 'rgba(255, 255, 255, 0.06)',
+    chipStroke: `rgba(${rgb1}, 0.32)`,
+    chipText: '#e6e6f0',
+    text: '#ffffff',
+    titleText: '#ffffff',
+    muted: '#a8a8bd',
+    faint: '#7a7a90',
+    arrowText: accents[0],
+    arrowBg: `rgba(${rgb1}, 0.2)`,
+    bgImage: `radial-gradient(circle at 12% 4%, rgba(${rgb1}, 0.26), transparent 26rem), radial-gradient(circle at 92% 16%, rgba(${rgb2}, 0.2), transparent 24rem), radial-gradient(circle at 50% 108%, rgba(${rgb2}, 0.16), transparent 30rem)`,
+  };
+}
+
+/** Picker metadata for the display-panel section, in display order. */
+export interface PanelOption {
+  id: DisplayPanel;
+  label: string;
+  hint: string;
+}
+
+export const PANEL_OPTIONS: PanelOption[] = [
+  { id: 'oled', label: 'OLED', hint: 'True black, pixels switch off' },
+  { id: 'lcd', label: 'Standard', hint: 'Soft dark greys, no smearing' },
+];
 
 /** Picker metadata for the Appearance sheet, in display order. */
 export interface ThemePresetOption {

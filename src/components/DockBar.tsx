@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { DockTab } from '../types.ts';
 import { useTheme } from '../context/ThemeContext.tsx';
+import { haptic } from '../utils/haptics.ts';
 
 export const DOCK_TABS: DockTab[] = [
   { id: 'home', label: 'Home', url: '' },
@@ -36,7 +37,7 @@ export const DockBar: React.FC<DockBarProps> = ({ activeTabId, onSelectTab }) =>
 
   return (
     <nav
-      className="app-chrome pb-safe w-full border-t backdrop-blur-md select-none transition-colors duration-200"
+      className="app-chrome app-chrome-bottom pb-safe w-full border-t backdrop-blur-md select-none transition-colors duration-200"
       style={{
         backgroundColor: 'var(--surface-topbar)',
         borderColor: 'var(--divider)',
@@ -55,7 +56,10 @@ export const DockBar: React.FC<DockBarProps> = ({ activeTabId, onSelectTab }) =>
               ref={(el) => {
                 chipsRef.current[tab.id] = el;
               }}
-              onClick={() => onSelectTab(tab)}
+              onClick={() => {
+                haptic('commit');
+                onSelectTab(tab);
+              }}
               className={`min-h-[38px] px-3.5 sm:px-4 rounded-xl text-xs font-semibold whitespace-nowrap cursor-pointer flex items-center justify-center transition-all flex-shrink-0 active:scale-95 ${
                 isSelected
                   ? 'bg-violet-600/20 text-violet-400 border border-violet-500/40 shadow-[0_0_12px_rgba(139,92,246,0.25)]'

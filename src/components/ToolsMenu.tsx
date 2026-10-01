@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   Compass,
   Server,
@@ -16,12 +16,26 @@ import {
   MessageSquare,
   LogOut,
   Trash2,
+  Copy,
+  Share2,
+  RefreshCw,
+  Smartphone,
+  Store,
   User as UserIcon,
 } from 'lucide-react';
 import { useToast } from './Toast.tsx';
 import { useTheme } from '../context/ThemeContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { openVictusLink } from '../utils/navigation.ts';
+import { haptic } from '../utils/haptics.ts';
+import {
+  hasShellBridge,
+  shellAdminAreas,
+  shellClearSession,
+  shellOpenExternal,
+  shellOpenNativeMenu,
+  shellRefreshAdminAccess,
+} from '../services/victusBridge.ts';
 
 interface ToolsMenuProps {
   isOpen: boolean;
@@ -48,12 +62,21 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
   const { config } = useTheme();
   const { user, signOut } = useAuth();
 
+  // The shell's own chrome, when running inside the APK. Outside it (dev
+  // server, hosted build) these entries simply do not exist.
+  const inShell = hasShellBridge();
+  // Admin entries exist only for accounts the panel says may use an admin
+  // area. Demo and normal accounts get an empty list and see nothing here.
+  const adminAreas = inShell ? shellAdminAreas() : [];
+
   if (!isOpen) return null;
 
   const isDashboardActive =
     currentUrl.includes('control.victuscloud.com') ||
     currentUrl === '' ||
     currentUrl.includes('dashboard');
+
+  const linkToShare = currentUrl || 'https://victuscloud.com';
 
   const handleLink = (url: string, title: string, tabId?: string) => {
     openVictusLink(url, {
@@ -65,6 +88,96 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
     });
     onClose();
   };
+
+  const handleCopyLink = async () => {
+    onClose();
+    try {
+      await navigator.clipboard.writeText(linkToShare);
+      showToast('Link copied');
+    } catch {
+      showToast("Couldn't copy — long-press the address bar instead");
+    }
+  };
+
+  const handleShareLink = async () => {
+    onClose();
+    const payload = {
+      title: 'Victus Cloud',
+      text: 'Victus Cloud — high-performance game servers and cloud hosting.',
+      url: linkToShare,
+    };
+    const nav = navigator as Navigator & {
+      share?: (data: { title?: string; text?: string; url?: string }) => Promise<void>;
+    };
+    if (typeof nav.share === 'function') {
+      try {
+        await nav.share(payload);
+        return;
+      } catch {
+        // Cancelled by the user, or the share sheet failed: fall through.
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(linkToShare);
+      showToast('Link copied — sharing is unavailable on this device');
+    } catch {
+      showToast('Sharing is unavailable on this device');
+    }
+  };
+
+  const handleOpenInBrowser = () => {
+    onClose();
+    if (inShell) {
+      shellOpenExternal();
+      showToast('Opening in your browser…');
+      return;
+    }
+    window.open(linkToShare, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleOpenInAppBrowser = () => {
+    onClose();
+    if (window.VictusNative?.openWebView) {
+      window.VictusNative.openWebView(linkToShare, 'Victus Cloud');
+      return;
+    }
+    // Browser build (dev server, hosted page): there is no in-app surface, so
+    // this is a plain link tap.
+    window.open(linkToShare, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleNativeSheet = (which: 'settings' | 'device' | 'updates') => {
+    onClose();
+    shellOpenNativeMenu(which);
+  };
+
+  const handleClearSession = () => {
+    onClose();
+    if (inShell) {
+      // The native half wipes cookies/storage/cache behind the same
+      // confirmation this menu already asks for.
+      shellClearSession();
+      return;
+    }
+    onOpenClearSession();
+  };
+
+  /**
+   * One capture-phase listener on the drawer gives every row the same short tap
+   * the native Tools menu used to fire, without threading `haptic()` through a
+   * dozen handlers that would each have to remember it.
+   */
+  const drawerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const drawer = drawerRef.current;
+    if (!drawer) return;
+    const onPointerDown = (event: Event) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('button')) haptic();
+    };
+    drawer.addEventListener('pointerdown', onPointerDown, true);
+    return () => drawer.removeEventListener('pointerdown', onPointerDown, true);
+  });
 
   const handleLogout = async () => {
     onClose();
@@ -79,6 +192,7 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
     >
       {/* Sidebar drawer sliding from left matching reference screenshots */}
       <div
+        ref={drawerRef}
         className="w-72 sm:w-80 max-w-[85vw] h-full bg-[#0c0c12] border-r border-white/[0.08] flex flex-col justify-between shadow-2xl animate-in slide-in-from-left duration-200 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
@@ -117,7 +231,7 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
               {/* Dashboard (Active State matching reference) */}
               <button
                 onClick={() => {
-                  onNavigate('http://control.victuscloud.com/', 'Control Panel', 'control');
+                  onNavigate('https://control.victuscloud.com/', 'Control Panel', 'control');
                   onClose();
                 }}
                 className={`w-full min-h-[40px] px-3 rounded-xl flex items-center gap-3 transition-colors cursor-pointer text-left ${
@@ -133,7 +247,7 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
               {/* My Servers */}
               <button
                 onClick={() => {
-                  onNavigate('http://control.victuscloud.com/', 'My Servers', 'control');
+                  onNavigate('https://control.victuscloud.com/', 'My Servers', 'control');
                   onClose();
                 }}
                 className="w-full min-h-[40px] px-3 rounded-xl flex items-center gap-3 text-slate-300 hover:text-white hover:bg-white/[0.04] transition-colors cursor-pointer text-left"
@@ -166,7 +280,7 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
               {/* Domains */}
               <button
                 onClick={() => {
-                  onNavigate('http://billing.victuscloud.com', 'Domains', 'billing');
+                  onNavigate('https://billing.victuscloud.com', 'Domains', 'billing');
                   onClose();
                 }}
                 className="w-full min-h-[40px] px-3 rounded-xl flex items-center gap-3 text-slate-300 hover:text-white hover:bg-white/[0.04] transition-colors cursor-pointer text-left"
@@ -178,7 +292,7 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
               {/* VPS */}
               <button
                 onClick={() => {
-                  onNavigate('http://control.victuscloud.com/', 'VPS Instances', 'control');
+                  onNavigate('https://control.victuscloud.com/', 'VPS Instances', 'control');
                   onClose();
                 }}
                 className="w-full min-h-[40px] px-3 rounded-xl flex items-center gap-3 text-slate-300 hover:text-white hover:bg-white/[0.04] transition-colors cursor-pointer text-left"
@@ -222,22 +336,13 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
               {/* Order Servers (Card Button highlighted matching screenshot) */}
               <button
                 onClick={() => {
-                  onNavigate('http://billing.victuscloud.com', 'Order Servers', 'billing');
+                  onNavigate('https://billing.victuscloud.com', 'Order Servers', 'billing');
                   onClose();
                 }}
                 className="w-full min-h-[42px] px-3.5 rounded-xl flex items-center gap-3 bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] text-white font-medium transition-colors cursor-pointer text-left"
               >
                 <ShoppingBag className="w-4 h-4 text-violet-400 flex-shrink-0" />
                 <span>Order Servers</span>
-              </button>
-
-              {/* Knowledgebase */}
-              <button
-                onClick={() => handleLink('https://community.victuscloud.com/', 'Knowledgebase', 'community')}
-                className="w-full min-h-[38px] px-3 rounded-xl flex items-center gap-3 text-slate-300 hover:text-white hover:bg-white/[0.04] transition-colors cursor-pointer text-left"
-              >
-                <BookOpen className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                <span>Knowledgebase</span>
               </button>
 
               {/* Network Status */}
@@ -351,23 +456,139 @@ export const ToolsMenu: React.FC<ToolsMenuProps> = ({
             <span className="text-xs">Theme &amp; Appearance</span>
           </button>
 
-          {/* Admin Area */}
-          <button
-            onClick={() => handleLink('http://control.victuscloud.com/admin', 'Admin Area', 'control')}
-            className="w-full min-h-[38px] px-3 rounded-lg flex items-center gap-3 hover:bg-white/[0.04] text-slate-300 hover:text-white transition-colors cursor-pointer text-left"
-          >
-            <div className="w-5 h-5 rounded-lg bg-violet-600/20 border border-violet-500/30 text-violet-300 flex items-center justify-center flex-shrink-0">
-              <Shield className="w-3.5 h-3.5" />
+          {/* Admin Area — only for accounts the panel says may use one. Everyone
+              else sees nothing admin-related here. */}
+          {adminAreas.length > 0 && (
+            <button
+              onClick={() => handleLink(adminAreas[0], 'Admin Area', 'control')}
+              className="w-full min-h-[38px] px-3 rounded-lg flex items-center gap-3 hover:bg-white/[0.04] text-slate-300 hover:text-white transition-colors cursor-pointer text-left"
+            >
+              <div className="w-5 h-5 rounded-lg bg-violet-600/20 border border-violet-500/30 text-violet-300 flex items-center justify-center flex-shrink-0">
+                <Shield className="w-3.5 h-3.5" />
+              </div>
+              <span className="text-xs font-semibold">Admin Area</span>
+            </button>
+          )}
+
+          {/* The Admin Area entry above only appears once the shell has
+              successfully confirmed the role. A probe that failed once — offline
+              at launch, the panel busy — therefore left a real administrator
+              with no entry and nothing on screen saying why. This is the "ask
+              again": it forces a fresh probe and, if the panel grants access, the
+              Admin Area entry appears a moment later on its own.
+
+              Shown only to a signed-in account, and it names no admin URL and no
+              privilege: it asks a question, it does not grant anything, so it is
+              not an admin surface. */}
+          {user && adminAreas.length === 0 && (
+            <button
+              onClick={() => {
+                shellRefreshAdminAccess();
+                showToast('Asking the panel what this account may use.');
+                onClose();
+              }}
+              className="w-full min-h-[38px] px-3 rounded-lg flex items-center gap-3 hover:bg-white/[0.04] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer text-left"
+            >
+              <div className="w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Shield className="w-3.5 h-3.5 text-slate-500" />
+              </div>
+              <span className="text-xs">Check admin access again</span>
+            </button>
+          )}
+
+          {/* ======================================================== */}
+          {/* APP — the native Tools entries, ported into this menu */}
+          {/* ======================================================== */}
+          <div className="pt-2 mt-1 border-t border-white/[0.08]">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block px-2.5 mb-1.5">
+              APP
+            </span>
+
+            <div className="space-y-0.5">
+              {/* Open the current page in the device browser */}
+              <button
+                onClick={handleOpenInBrowser}
+                className="w-full min-h-[38px] px-3 rounded-lg flex items-center gap-3 hover:bg-white/[0.04] text-slate-300 hover:text-white transition-colors cursor-pointer text-left"
+              >
+                <div className="w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <ExternalLink className="w-4 h-4 text-slate-400" />
+                </div>
+                <span className="text-xs">Open in browser</span>
+              </button>
+
+              {/* Open the current page in the app's own browser surface */}
+              <button
+                onClick={handleOpenInAppBrowser}
+                className="w-full min-h-[38px] px-3 rounded-lg flex items-center gap-3 hover:bg-white/[0.04] text-slate-300 hover:text-white transition-colors cursor-pointer text-left"
+              >
+                <div className="w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Globe className="w-4 h-4 text-slate-400" />
+                </div>
+                <span className="text-xs">Open site in app browser</span>
+              </button>
+
+              {/* Copy / share the current link */}
+              <button
+                onClick={handleCopyLink}
+                className="w-full min-h-[38px] px-3 rounded-lg flex items-center gap-3 hover:bg-white/[0.04] text-slate-300 hover:text-white transition-colors cursor-pointer text-left"
+              >
+                <div className="w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Copy className="w-4 h-4 text-slate-400" />
+                </div>
+                <span className="text-xs">Copy link</span>
+              </button>
+
+              <button
+                onClick={handleShareLink}
+                className="w-full min-h-[38px] px-3 rounded-lg flex items-center gap-3 hover:bg-white/[0.04] text-slate-300 hover:text-white transition-colors cursor-pointer text-left"
+              >
+                <div className="w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Share2 className="w-4 h-4 text-slate-400" />
+                </div>
+                <span className="text-xs">Share link</span>
+              </button>
+
+              {/* Marketplace */}
+              <button
+                onClick={() => handleLink('https://victuscloud.com/marketplace', 'Marketplace', 'website')}
+                className="w-full min-h-[38px] px-3 rounded-lg flex items-center gap-3 hover:bg-white/[0.04] text-slate-300 hover:text-white transition-colors cursor-pointer text-left"
+              >
+                <div className="w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Store className="w-4 h-4 text-slate-400" />
+                </div>
+                <span className="text-xs">Marketplace</span>
+              </button>
+
+              {/* Native shell entries — device compatibility and updates */}
+              {inShell && (
+                <>
+                  <button
+                    onClick={() => handleNativeSheet('device')}
+                    className="w-full min-h-[38px] px-3 rounded-lg flex items-center gap-3 hover:bg-white/[0.04] text-slate-300 hover:text-white transition-colors cursor-pointer text-left"
+                  >
+                    <div className="w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Smartphone className="w-4 h-4 text-slate-400" />
+                    </div>
+                    <span className="text-xs">Device compatibility</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleNativeSheet('updates')}
+                    className="w-full min-h-[38px] px-3 rounded-lg flex items-center gap-3 hover:bg-white/[0.04] text-slate-300 hover:text-white transition-colors cursor-pointer text-left"
+                  >
+                    <div className="w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <RefreshCw className="w-4 h-4 text-slate-400" />
+                    </div>
+                    <span className="text-xs">Check for updates</span>
+                  </button>
+                </>
+              )}
             </div>
-            <span className="text-xs font-semibold">Admin Area</span>
-          </button>
+          </div>
 
           {/* Clear local app session / cached storage */}
           <button
-            onClick={() => {
-              onClose();
-              onOpenClearSession();
-            }}
+            onClick={handleClearSession}
             className="w-full min-h-[38px] px-3 rounded-lg flex items-center gap-3 hover:bg-rose-500/10 text-slate-300 hover:text-rose-300 transition-colors cursor-pointer text-left"
           >
             <div className="w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0">

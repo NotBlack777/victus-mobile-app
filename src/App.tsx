@@ -14,6 +14,7 @@ import { ErrorOverlay } from './components/ErrorOverlay.tsx';
 import { BackgroundFX } from './components/BackgroundFX.tsx';
 import { DockTab } from './types.ts';
 import { useAuth } from './context/AuthContext.tsx';
+import { hasShellBridge, shellBack, shellRefresh, shellSetPageScrolledAwayFromTop } from './services/victusBridge.ts';
 
 interface HistoryEntry {
   tabId: string;
@@ -50,24 +51,60 @@ export const App: React.FC = () => {
   const currentEntry = history[currentIndex] || HOME_ENTRY;
   const canGoBack = currentIndex > 0 || currentEntry.tabId !== 'home';
 
-  // Simulate progress bar animation on navigation
+  // Simulate progress bar animation on navigation. Each run cancels the timers
+  // of the previous one (and of a rapid unmount) — previously, overlapping
+  // navigations left stray timers that flipped the bar back to visible after
+  // it had already settled.
+  const loadingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const clearLoadingTimers = useCallback(() => {
+    loadingTimersRef.current.forEach(clearTimeout);
+    loadingTimersRef.current = [];
+  }, []);
   const triggerLoading = useCallback(() => {
+    clearLoadingTimers();
     setIsLoading(true);
     setProgress(15);
-    const t1 = setTimeout(() => setProgress(55), 100);
-    const t2 = setTimeout(() => setProgress(90), 220);
-    const t3 = setTimeout(() => {
+    const push = (fn: () => void, ms: number) =>
+      loadingTimersRef.current.push(setTimeout(fn, ms));
+    push(() => setProgress(55), 100);
+    push(() => setProgress(90), 220);
+    push(() => {
       setProgress(100);
-      setTimeout(() => {
+      push(() => {
         setIsLoading(false);
         setProgress(0);
       }, 150);
     }, 380);
+  }, [clearLoadingTimers]);
 
+  // Never leave timers running (or the bar stuck visible) after unmount.
+  useEffect(() => clearLoadingTimers, [clearLoadingTimers]);
+
+  /**
+   * Keeps the native pull-to-refresh honest about where the page is.
+   *
+   * <p>The app scrolls inside `.app-content`, not in the document, so the
+   * WebView's own scroll flag is permanently false and the shell would treat
+   * every downward drag as a pull. This reports the real position instead. It
+   * is attached to the scroller rather than the window precisely because
+   * window scroll never moves here.</p>
+   */
+  useEffect(() => {
+    const scroller = document.querySelector('.app-content');
+    if (!scroller) return;
+    let reported = false;
+    const report = () => {
+      const away = scroller.scrollTop > 2;
+      if (away !== reported) {
+        reported = away;
+        shellSetPageScrolledAwayFromTop(away);
+      }
+    };
+    scroller.addEventListener('scroll', report, { passive: true });
+    report();
     return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
+      scroller.removeEventListener('scroll', report);
+      shellSetPageScrolledAwayFromTop(false);
     };
   }, []);
 
@@ -93,11 +130,21 @@ export const App: React.FC = () => {
         title: resolvedTitle,
       };
 
+      // History and the index into it are ONE piece of state. Updating them
+      // separately let the two disagree: two navigations inside a single React
+      // batch (a double-tapped chip, or navigateTo called from a promise
+      // callback) both read the same stale `currentIndex`, so history was
+      // truncated twice to the same length while the index advanced twice —
+      // leaving currentEntry undefined and silently dropping the user back to
+      // Home. Deriving both from one updater makes that impossible.
+      const indexRef = { value: currentIndex };
       setHistory((prev) => {
-        const next = prev.slice(0, currentIndex + 1);
-        return [...next, newEntry];
+        const base = Math.min(indexRef.value, prev.length - 1);
+        const next = [...prev.slice(0, base + 1), newEntry];
+        indexRef.value = next.length - 1;
+        return next;
       });
-      setCurrentIndex((prev) => prev + 1);
+      setCurrentIndex(() => indexRef.value);
     },
     [currentIndex, triggerLoading]
   );
@@ -124,7 +171,18 @@ export const App: React.FC = () => {
     if (currentIndex > 0) {
       setCurrentIndex((prev) => prev - 1);
       triggerLoading();
-    } else if (currentEntry.tabId !== 'home') {
+      return;
+    }
+
+    // In-app history is exhausted. Inside the APK the shell owns the real
+    // WebView history (and knows when to leave the app), so hand over rather
+    // than guessing; in a browser the guardian entry lets the press fall through.
+    if (hasShellBridge()) {
+      shellBack();
+      return;
+    }
+
+    if (currentEntry.tabId !== 'home') {
       navigateTo('', 'Victus Cloud', 'home');
     }
   }, [errorState.isOpen, currentIndex, currentEntry, navigateTo, triggerLoading]);
@@ -161,8 +219,15 @@ export const App: React.FC = () => {
 
   const handleRefresh = useCallback(() => {
     setErrorState((prev) => ({ ...prev, isOpen: false }));
+    // A live Victus page is loaded by the shell's WebView, so the reload has to
+    // happen there; the bundled home is this app and only needs its own bar.
+    if (hasShellBridge() && currentEntry.url) {
+      shellRefresh();
+      triggerLoading();
+      return;
+    }
     triggerLoading();
-  }, [triggerLoading]);
+  }, [currentEntry.url, triggerLoading]);
 
   const handleClearSession = useCallback(() => {
     setHistory([HOME_ENTRY]);
@@ -173,6 +238,21 @@ export const App: React.FC = () => {
     // otherwise the app stayed signed in until the next reload.
     void signOut();
   }, [triggerLoading, signOut]);
+
+  // The native "Clear app session" dialog wipes the panel session in Java, where
+  // the credential actually lives. Nothing in the web app knew, so the page kept
+  // rendering the signed-in home screen with cached server data until the next
+  // cold start — the exact opposite of what the user just asked for.
+  useEffect(() => {
+    const onCleared = () => {
+      setHistory([HOME_ENTRY]);
+      setCurrentIndex(0);
+      setErrorState({ isOpen: false, message: '' });
+      void signOut();
+    };
+    window.addEventListener('victus:session-cleared', onCleared);
+    return () => window.removeEventListener('victus:session-cleared', onCleared);
+  }, [signOut]);
 
   // Top-level Auth Gate: if no session, render the dedicated login screen
   if (!session) {

@@ -15,21 +15,42 @@ import {
 } from 'lucide-react';
 import { VictusService } from '../services/controlData.ts';
 
+/** A power action, which is exactly the panel's own signal vocabulary. */
+type PowerAction = 'start' | 'restart' | 'stop' | 'kill';
+
 type ServiceStatus = VictusService['status'];
 import { useToast } from './Toast.tsx';
 import { useTheme } from '../context/ThemeContext.tsx';
 import { openVictusLink } from '../utils/navigation.ts';
+import {
+  PanelResources,
+  fetchResources,
+  formatBytes,
+  formatUptime,
+  sendCommand,
+  sendPower,
+} from '../services/panelApi.ts';
 
 interface ServiceControlScreenProps {
   service: VictusService;
   onBack: () => void;
   onUpdateServiceStatus?: (serviceId: string, status: ServiceStatus) => void;
+  /**
+   * True when this server is a real one on the signed-in account, in which case
+   * power actions, console commands and resource figures come from
+   * control.victuscloud.com instead of the bundled sample fleet.
+   */
+  live?: boolean;
+  /** Re-reads the fleet from the panel after a power action. */
+  onRefreshServers?: () => void | Promise<void>;
 }
 
 export const ServiceControlScreen: React.FC<ServiceControlScreenProps> = ({
   service,
   onBack,
   onUpdateServiceStatus,
+  live = false,
+  onRefreshServers,
 }) => {
   const { showToast } = useToast();
   const { config } = useTheme();
@@ -39,16 +60,23 @@ export const ServiceControlScreen: React.FC<ServiceControlScreenProps> = ({
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
   const [consoleInput, setConsoleInput] = useState('');
-  const [consoleLogs, setConsoleLogs] = useState<string[]>([
-    `[Victus Daemon] Node victus-${service.node.toLowerCase()} connected via TLS 1.3`,
-    `[Container] Container victus-srv-${service.shortId} initialized with ${service.memory} RAM`,
-    `[Pterodactyl/Wings] Server marked as ${service.status} on port ${service.port}`,
-    `[Metrics] CPU: 14.8% | RAM: 1.42 GB / ${service.memory} | Disk: 4.8 GB / ${service.disk}`,
-    `[Server] Loading core modules for ${service.name}...`,
-    service.status === 'ACTIVE'
-      ? '[Server] System operational and listening for player traffic.'
-      : '[Server] Daemon standing by. Press START to boot container.',
-  ]);
+  const [busyAction, setBusyAction] = useState<PowerAction | null>(null);
+  /** Live figures from the panel; null in demo mode or before the first poll. */
+  const [resources, setResources] = useState<PanelResources | null>(null);
+
+  const [consoleLogs, setConsoleLogs] = useState<string[]>(live
+    ? [
+        `[Victus Cloud] Connected to control.victuscloud.com as a signed-in client.`,
+        `[Panel] Server ${service.name} on node ${service.node} · uuid ${service.uuid}`,
+        `[Panel] Allocated ${service.memory} RAM, ${service.disk} disk.`,
+        '[Panel] Console output, CPU/RAM/disk usage and power actions below are live.',
+      ]
+    : [
+        '[Sample data] This is the bundled example fleet, not a connected panel.',
+        '[Sample data] Power actions, console output and usage figures are illustrations.',
+        `[Sample] ${service.name} · node ${service.node} · ${service.memory} RAM`,
+        'Sign in with your Victus Cloud account to control a real server.',
+      ]);
 
   const consoleBottomRef = useRef<HTMLDivElement>(null);
 
@@ -63,7 +91,61 @@ export const ServiceControlScreen: React.FC<ServiceControlScreenProps> = ({
     showToast('Copied to clipboard');
   };
 
-  const handlePower = (action: 'start' | 'restart' | 'stop' | 'kill') => {
+  /**
+   * Polls real usage while this screen is open on a live server. Every 5s, which
+   * is the panel's own dashboard cadence and cheap enough for a phone connection;
+   * a stopped server is polled more slowly since nothing can change.
+   */
+  useEffect(() => {
+    if (!live || !service.uuid) return;
+    let cancelled = false;
+
+    const poll = async () => {
+      const result = await fetchResources(service.uuid);
+      if (cancelled || !result.data) return;
+      setResources(result.data);
+      if (result.data.state === 'running') setPowerState('running');
+      else if (result.data.state === 'offline') setPowerState('stopped');
+    };
+
+    void poll();
+    const timer = window.setInterval(poll, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [live, service.uuid]);
+
+  /**
+   * Power actions. On a live server these are real panel calls and the console
+   * reports what the panel actually answered — the screen never claims a server
+   * started when the panel did not accept the instruction.
+   */
+  const handlePower = async (action: PowerAction) => {
+    if (live && service.uuid) {
+      setBusyAction(action);
+      const result = await sendPower(service.uuid, action);
+      if (result.error) {
+        setConsoleLogs((prev) => [...prev, `[Panel] ${action.toUpperCase()} rejected: ${result.error}`]);
+        showToast(result.error);
+      } else {
+        setConsoleLogs((prev) => [
+          ...prev,
+          `> power ${action}`,
+          `[Panel] ${action.toUpperCase()} accepted (HTTP ${result.status}).`,
+        ]);
+        showToast(`${service.name}: ${action} sent to the panel`);
+        if (action === 'start' || action === 'restart') setPowerState('running');
+        if (action === 'stop' || action === 'kill') setPowerState('stopped');
+        if (action === 'restart') setPowerState('running');
+        await onRefreshServers?.();
+        const refreshed = await fetchResources(service.uuid);
+        if (refreshed.data) setResources(refreshed.data);
+      }
+      setBusyAction(null);
+      return;
+    }
+
     if (action === 'start') {
       setPowerState('running');
       setConsoleLogs((prev) => [
@@ -111,12 +193,26 @@ export const ServiceControlScreen: React.FC<ServiceControlScreenProps> = ({
     }
   };
 
-  const handleConsoleSubmit = (e: React.FormEvent) => {
+  const handleConsoleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!consoleInput.trim()) return;
     const cmd = consoleInput.trim();
-    setConsoleLogs((prev) => [...prev, `> ${cmd}`, `[Server] Executed: ${cmd} (status 0)`]);
     setConsoleInput('');
+
+    if (live && service.uuid) {
+      setConsoleLogs((prev) => [...prev, `> ${cmd}`]);
+      const result = await sendCommand(service.uuid, cmd);
+      setConsoleLogs((prev) => [
+        ...prev,
+        result.error
+          ? `[Panel] Command rejected: ${result.error}`
+          : `[Panel] Command accepted (HTTP ${result.status}). Output appears in the server console.`,
+      ]);
+      if (result.error) showToast(result.error);
+      return;
+    }
+
+    setConsoleLogs((prev) => [...prev, `> ${cmd}`, `[Sample data] Not sent — this is the example fleet.`]);
   };
 
   const isOnline = powerState === 'running';
@@ -135,7 +231,7 @@ export const ServiceControlScreen: React.FC<ServiceControlScreenProps> = ({
 
         <button
           onClick={() =>
-            openVictusLink('http://control.victuscloud.com/', {
+            openVictusLink('https://control.victuscloud.com/', {
               openLinksExternally: config.openLinksExternally,
               showToast,
               title: 'Control Panel',
@@ -341,14 +437,24 @@ export const ServiceControlScreen: React.FC<ServiceControlScreenProps> = ({
           </div>
           <div className="flex items-baseline gap-1 mt-1">
             <strong className="text-xl font-mono font-bold text-white">
-              {isOnline ? '14.8%' : '0.0%'}
+              {live && resources
+                ? `${resources.cpuPercent.toFixed(1)}%`
+                : isOnline
+                  ? '14.8%'
+                  : '0.0%'}
             </strong>
             <span className="text-[11px] text-slate-500 font-mono">/ 400%</span>
           </div>
           <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden mt-3">
             <div
               className="h-full bg-violet-500 shadow-[0_0_6px_rgba(139,92,246,0.6)] transition-all duration-300"
-              style={{ width: isOnline ? '15%' : '0%' }}
+              style={{
+                width: live && resources
+                  ? `${Math.min(100, resources.cpuPercent / 4)}%`
+                  : isOnline
+                    ? '15%'
+                    : '0%',
+              }}
             />
           </div>
         </div>
@@ -363,7 +469,11 @@ export const ServiceControlScreen: React.FC<ServiceControlScreenProps> = ({
           </div>
           <div className="flex items-baseline gap-1 mt-1">
             <strong className="text-xl font-mono font-bold text-white">
-              {isOnline ? '1.42 GB' : '0.00 GB'}
+              {live && resources
+                ? formatBytes(resources.memoryBytes)
+                : isOnline
+                  ? '1.42 GB'
+                  : '0.00 GB'}
             </strong>
             <span className="text-[11px] text-slate-500 font-mono">/ {service.memory}</span>
           </div>
@@ -384,7 +494,9 @@ export const ServiceControlScreen: React.FC<ServiceControlScreenProps> = ({
             <HardDrive className="w-4 h-4 text-sky-400" />
           </div>
           <div className="flex items-baseline gap-1 mt-1">
-            <strong className="text-xl font-mono font-bold text-white">4.8 GB</strong>
+            <strong className="text-xl font-mono font-bold text-white">
+              {live && resources ? formatBytes(resources.diskBytes) : '4.8 GB'}
+            </strong>
             <span className="text-[11px] text-slate-500 font-mono">/ {service.disk}</span>
           </div>
           <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden mt-3">
@@ -405,9 +517,27 @@ export const ServiceControlScreen: React.FC<ServiceControlScreenProps> = ({
               Live Console Output
             </span>
           </div>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.04] text-slate-400 border border-white/[0.06]">
-            UTF-8 / TLS
-          </span>
+          <div className="flex items-center gap-1.5">
+            {live && resources && formatUptime(resources.uptimeMs) && (
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.04] text-slate-300 border border-white/[0.06]">
+                up {formatUptime(resources.uptimeMs)}
+              </span>
+            )}
+            {busyAction && (
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-violet-500/15 text-violet-200 border border-violet-500/30">
+                {busyAction}…
+              </span>
+            )}
+            <span
+              className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                live
+                  ? 'bg-emerald-500/15 text-emerald-200 border-emerald-500/30'
+                  : 'bg-amber-500/15 text-amber-200 border-amber-500/30'
+              }`}
+            >
+              {live ? 'Live panel' : 'Sample data'}
+            </span>
+          </div>
         </div>
 
         {/* Terminal Log Output Window */}

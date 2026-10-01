@@ -1,0 +1,13 @@
+# Hosts override for `PanelCheck --mock`.
+#
+# The client refuses to attach a credential to any URL that is not
+# https://control.victuscloud.com (see VictusApi.isAcceptableUrl), and that check
+# must not be weakened just to run a local fixture. Instead the JDK is told to
+# resolve the real hostname to the loopback interface for the length of the test:
+#
+#   java -Djdk.net.hosts.file=tools/panel-check/test-hosts …
+#
+# Combined with the fixture's certificate (SAN dns:control.victuscloud.com, trusted
+# through -Djavax.net.ssl.trustStore), the app's real network code talks to a local
+# server on the real hostname over real TLS — no production code is bypassed.
+127.0.0.1 control.victuscloud.com

@@ -31,6 +31,24 @@
   </head>
   <body class="min-h-screen">
     <div id="root"></div>
+    <script>
+      // Paint the saved color mode before first render so a light-mode user
+      // never sees the dark default flash. ThemeContext later syncs the same
+      // class (and treats a missing/legacy value as dark).
+      (function () {
+        try {
+          var saved = localStorage.getItem('victus_theme_prefs_web');
+          var colorMode = saved ? (JSON.parse(saved).colorMode || 'dark') : 'dark';
+          if (colorMode === 'light') {
+            document.documentElement.classList.add('light');
+          } else {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
     <script>
       // Register the service worker for installable, offline-capable app behavior.

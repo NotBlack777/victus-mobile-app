@@ -20,4 +20,9 @@
     <color name="sheet_stroke">#26C084FC</color>
     <color name="sheet_handle">#4DE7D9FB</color>
     <color name="swatch_stroke">#40FFFFFF</color>
+
+    <!-- Translucent glass card used by the native sheets (dark glass in both
+         modes, so these are identical above and below). -->
+    <color name="menu_bg">#F20C0C14</color>
+    <color name="menu_stroke">#14FFFFFF</color>
 </resources>

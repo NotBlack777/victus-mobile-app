@@ -125,7 +125,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
       <section
         className="rounded-xl p-5 sm:p-6 border relative overflow-hidden shadow-sm transition-colors duration-200"
         style={{
-          backgroundColor: 'var(--panel)',
+          backgroundColor: 'var(--panel-soft)',
           borderColor: 'var(--line)',
         }}
       >
@@ -190,7 +190,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
           <div
             className="p-2.5 rounded-lg border"
             style={{
-              backgroundColor: 'var(--panel-strong)',
+              backgroundColor: 'var(--panel-strong-soft)',
               borderColor: 'var(--line-soft)',
             }}
           >
@@ -211,7 +211,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
           <div
             className="p-2.5 rounded-lg border"
             style={{
-              backgroundColor: 'var(--panel-strong)',
+              backgroundColor: 'var(--panel-strong-soft)',
               borderColor: 'var(--line-soft)',
             }}
           >
@@ -232,7 +232,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
           <div
             className="p-2.5 rounded-lg border"
             style={{
-              backgroundColor: 'var(--panel-strong)',
+              backgroundColor: 'var(--panel-strong-soft)',
               borderColor: 'var(--line-soft)',
             }}
           >
@@ -283,7 +283,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
                 tabIndex={0}
                 className="p-4 rounded-xl border hover:border-violet-500/30 transition-all cursor-pointer group flex flex-col justify-between"
                 style={{
-                  backgroundColor: 'var(--panel)',
+                  backgroundColor: 'var(--panel-soft)',
                   borderColor: 'var(--line)',
                 }}
               >
@@ -351,7 +351,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
                 onClick={() => onNavigate(action.url, action.title, action.id)}
                 className="p-3 rounded-xl border transition-all cursor-pointer text-left group hover:border-violet-500/40"
                 style={{
-                  backgroundColor: 'var(--panel)',
+                  backgroundColor: 'var(--panel-soft)',
                   borderColor: 'var(--line)',
                 }}
               >

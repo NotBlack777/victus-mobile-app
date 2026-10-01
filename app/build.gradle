@@ -56,8 +56,8 @@ android {
         // Android 6.0 instead of a clean "unsupported" path.
         minSdk 24
         targetSdk 35
-        versionCode 23
-        versionName '2.2.0'
+        versionCode 57
+        versionName '4.6.9'
     }
 
     signingConfigs {
@@ -74,20 +74,42 @@ android {
         }
     }
 
+    // ========================================================================
+    // NO SHRINKING. EVER.
+    // ========================================================================
+    // minifyEnabled / shrinkResources are hard-disabled for BOTH build types.
+    //
+    // This is a deliberate stability decision, not an oversight, and the original
+    // diagnosis behind it turned out to be only half right. Shrinking did remove
+    // all 30 `androidx.core.splashscreen` classes from the 4.5.0/4.5.1 release dex,
+    // along with the `installSplashScreen` call that MainActivity.onCreate() makes
+    // on the first line of launch — but that was NOT what was crashing the app. The
+    // real cause was a re-parenting bug in createLayout() that killed every build
+    // of every version, now covered by MainActivityLaunchTest. See CHANGELOG 4.6.1.
+    //
+    // Shrinking stays off regardless: a launch-path class vanishing under
+    // minification is a genuine hazard even when it is not today's bug.
+    //
+    // APK size is not a goal here. Stability is. Nothing in this build is
+    // shrunk, minified, obfuscated or stripped — not code, not resources, not
+    // assets — and the `checkNoShrinking` task below fails the build if anyone
+    // ever turns it back on.
     buildTypes {
         debug {
             // Debug builds keep the original applicationId so the phone-only
             // workflow produces an installable update path for testers, and
             // carry the release signature so they upgrade each other in place.
             minifyEnabled false
+            shrinkResources false
             if (hasReleaseSigning) {
                 signingConfig signingConfigs.release
             }
         }
         release {
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // See above: stability beats size. No R8, no ProGuard, no resource
+            // shrinking, no obfuscation.
+            minifyEnabled false
+            shrinkResources false
             if (hasReleaseSigning) {
                 signingConfig signingConfigs.release
             }
@@ -106,6 +128,56 @@ android {
         // Shizuku runs as the shell/root identity for in-app updates.
         aidl true
     }
+
+    // Robolectric needs the merged manifest, the real resources and the
+    // compiled assets to boot MainActivity in a JVM test.
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+            returnDefaultValues = true
+        }
+    }
+}
+
+// ============================================================================
+// Guard rail: the build fails if shrinking is ever switched back on.
+// ============================================================================
+tasks.register('checkNoShrinking') {
+    group = 'verification'
+    description = 'Fails if any build type re-enables minification or resource shrinking.'
+    def buildFile = file('build.gradle')
+    inputs.file(buildFile)
+    outputs.upToDateWhen { false }
+    doLast {
+        // Comments explain *why* these switches are off, and quoting the old
+        // values in a comment must not read as re-enabling them — so only
+        // non-comment lines are inspected.
+        def code = buildFile.readLines('UTF-8')
+                .collect { it.replaceAll(/^\s*\/\/.*$/, '').replaceAll(/\/\*.*?\*\//, '') }
+                .join('\n')
+        // Assembled from fragments so that this guard cannot match its own
+        // search terms and report itself as a violation.
+        def minifySwitch = ['minify', 'Enabled'].join('')
+        def shrinkSwitch = ['shrink', 'Resources'].join('')
+        def rulesFile = ['pro' + 'guard', 'Files'].join('')
+        def rulesTemplate = ['pro' + 'guard-android']
+        def offenders = []
+        if (code =~ /${minifySwitch}\s+true/) offenders << "${minifySwitch} true"
+        if (code =~ /${shrinkSwitch}\s+true/) offenders << "${shrinkSwitch} true"
+        if (code.contains(rulesFile)) offenders << rulesFile
+        if (code.contains(rulesTemplate[0])) offenders << rulesTemplate[0]
+        if (!offenders.isEmpty()) {
+            throw new GradleException(
+                    "Shrinking must stay off. It stripped launch-path classes in 4.5.0,\n" +
+                    "and the app is now proven not to need a small build to stay stable.\n" +
+                    "Found in app/build.gradle: " + offenders.join(', ') + "\n" +
+                    "Every build type must keep ${minifySwitch} false and ${shrinkSwitch} false.")
+        }
+        logger.lifecycle('checkNoShrinking: OK — no minification, obfuscation or resource shrinking.')
+    }
+}
+tasks.matching { it.name ==~ /^pre(Debug|Release)Build$/ }.configureEach {
+    dependsOn 'checkNoShrinking'
 }
 
 dependencies {
@@ -118,6 +190,9 @@ dependencies {
     // and deprecated WebSettings flags.
     implementation 'androidx.webkit:webkit:1.12.1'
 
+    // Pull-to-refresh on the WebView column (androidx.swiperefreshlayout, ~30KB).
+    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
+
     // In-app updater — Shizuku installs the update as the ADB/shell identity (or
     // root, when Sui/root is available) without any user-facing install prompt.
     implementation 'dev.rikka.shizuku:api:13.1.5'
@@ -129,6 +204,13 @@ dependencies {
     // SDK at runtime, so the real implementation is supplied for the test JVM.
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20240303'
+
+    // Robolectric runs MainActivity.onCreate for real, against a stubbed
+    // Android runtime. The app shipped four releases that died on the first
+    // line of launch purely because nothing ever executed that method, so the
+    // launch path is now a test rather than a thing we hope works.
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+    testImplementation 'androidx.test:core:1.6.1'
 }
 
 // ============================================================================

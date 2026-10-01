@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTheme } from '../context/ThemeContext.tsx';
 import { hexToRgb } from '../theme/palettes.ts';
+import { KNOWN_STYLES_FIELD, resolveBackdropLayer } from '../theme/backdrop.ts';
 import { BackgroundStyle } from '../types.ts';
 
-const KNOWN_STYLES: BackgroundStyle[] = ['aurora', 'mesh', 'starfield', 'none'];
+const KNOWN_STYLES = KNOWN_STYLES_FIELD;
 
 /**
  * Tracks the OS "reduce motion" preference so the backdrop can stay still for
@@ -38,6 +39,12 @@ function usePrefersReducedMotion(): boolean {
  *   - the starfield is a canvas that is sized with a capped device pixel ratio,
  *     pauses when the tab is hidden, and is drawn once (not animated) when
  *     motion is reduced.
+ *
+ * Visibility notes — the fields used to be both small and almost transparent,
+ * which made a perfectly running animation look like a dead one. Each field now
+ * covers the viewport several times over, parks its bright core inside the
+ * visible area, and blends with `screen` so it reads as emitted light on the
+ * near-black canvas.
  */
 export const BackgroundFX: React.FC = () => {
   const { config, gradientColors } = useTheme();
@@ -64,7 +71,16 @@ export const BackgroundFX: React.FC = () => {
     let frame = 0;
     let width = 0;
     let height = 0;
-    let stars: { x: number; y: number; r: number; vx: number; vy: number; a: number }[] = [];
+    let stars: {
+      x: number;
+      y: number;
+      r: number;
+      vx: number;
+      vy: number;
+      a: number;
+      tw: number;
+      ts: number;
+    }[] = [];
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
 
     const build = () => {
@@ -76,22 +92,46 @@ export const BackgroundFX: React.FC = () => {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       // Density scales with area but stays capped so large screens stay cheap.
-      const count = Math.min(72, Math.max(26, Math.round((width * height) / 9000)));
-      stars = Array.from({ length: count }, () => ({
-        x: Math.random() * width,
-        y: Math.random() * height,
-        r: Math.random() * 1.3 + 0.35,
-        vx: (Math.random() - 0.5) * 0.09,
-        vy: (Math.random() - 0.5) * 0.09,
-        a: Math.random() * 0.45 + 0.22,
-      }));
+      // A sparse field reads as a dead screen; this is dense enough to clearly
+      // drift while still being a few hundred tiny fills per frame.
+      const count = Math.min(240, Math.max(120, Math.round((width * height) / 1400)));
+      stars = Array.from({ length: count }, () => {
+        // A few brighter anchors carry the field; the rest are fine dust, so
+        // the canvas has depth instead of reading as uniform noise.
+        const anchor = Math.random() < 0.12;
+        return {
+          x: Math.random() * width,
+          y: Math.random() * height,
+          r: anchor ? Math.random() * 1.7 + 1.4 : Math.random() * 1.2 + 0.6,
+          vx: (Math.random() - 0.5) * 0.34,
+          vy: (Math.random() - 0.5) * 0.34,
+          a: anchor ? Math.random() * 0.3 + 0.7 : Math.random() * 0.35 + 0.4,
+          tw: Math.random() * Math.PI * 2, // twinkle phase
+          ts: Math.random() * 0.02 + 0.006, // twinkle speed
+        };
+      });
     };
 
-    const draw = () => {
+    const draw = (t: number) => {
       ctx.clearRect(0, 0, width, height);
-      ctx.fillStyle = `rgba(${rgbA}, 0.9)`;
       for (const star of stars) {
-        ctx.globalAlpha = star.a;
+        // Twinkle keeps the field alive even between the slow drifts.
+        const twinkle = 0.68 + 0.32 * Math.sin(t * star.ts + star.tw);
+        const alpha = Math.min(1, star.a * twinkle);
+
+        // Anchors get a soft halo so the field has depth instead of reading as
+        // flat specks. One extra fill for a small slice of the stars keeps the
+        // whole thing cheap.
+        if (star.r > 1.5) {
+          ctx.globalAlpha = alpha * 0.3;
+          ctx.fillStyle = `rgba(${rgbA}, 1)`;
+          ctx.beginPath();
+          ctx.arc(star.x, star.y, star.r * 3.4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = `rgba(${star.r > 1.5 ? rgbB : rgbA}, 0.95)`;
         ctx.beginPath();
         ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
         ctx.fill();
@@ -99,7 +139,7 @@ export const BackgroundFX: React.FC = () => {
       ctx.globalAlpha = 1;
     };
 
-    const step = () => {
+    const step = (t: number) => {
       for (const star of stars) {
         star.x += star.vx;
         star.y += star.vy;
@@ -108,17 +148,17 @@ export const BackgroundFX: React.FC = () => {
         if (star.y < -2) star.y = height + 2;
         else if (star.y > height + 2) star.y = -2;
       }
-      draw();
+      draw(t);
       frame = requestAnimationFrame(step);
     };
 
     build();
-    draw();
+    draw(0);
     if (animate) frame = requestAnimationFrame(step);
 
     const handleResize = () => {
       build();
-      draw();
+      draw(0);
     };
 
     const handleVisibility = () => {
@@ -139,53 +179,34 @@ export const BackgroundFX: React.FC = () => {
       window.removeEventListener('resize', handleResize);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [style, animate, rgbA]);
+  }, [style, animate, rgbA, rgbB]);
 
   if (style === 'none') return null;
 
+  const layers = resolveBackdropLayer(style, rgbA, rgbB);
+  // The grid and its sweep share one mask, so they are wrapped together; the
+  // glow sits outside the mask to keep the top of the screen lit.
+  const isMesh = style === 'mesh';
+  const gridLayers = isMesh ? layers.filter((layer) => !layer.className.includes('glow')) : [];
+  const glowLayers = isMesh ? layers.filter((layer) => layer.className.includes('glow')) : [];
+
+  const render = (layer: (typeof layers)[number]) => (
+    <div
+      key={layer.className}
+      className={layer.className}
+      style={{ background: layer.background, backgroundSize: layer.backgroundSize }}
+    />
+  );
+
   return (
     <div className={`bgfx${animate ? '' : ' bgfx-static'}`} aria-hidden="true">
-      {style === 'aurora' && (
+      {isMesh ? (
         <>
-          <div
-            className="bgfx-blob bgfx-blob-1"
-            style={{
-              background: `radial-gradient(circle at 50% 50%, rgba(${rgbA}, 0.32), transparent 68%)`,
-            }}
-          />
-          <div
-            className="bgfx-blob bgfx-blob-2"
-            style={{
-              background: `radial-gradient(circle at 50% 50%, rgba(${rgbB}, 0.28), transparent 68%)`,
-            }}
-          />
-          <div
-            className="bgfx-blob bgfx-blob-3"
-            style={{
-              background: `radial-gradient(circle at 50% 50%, rgba(${rgbA}, 0.18), transparent 66%)`,
-            }}
-          />
+          <div className="bgfx-mesh-wrap">{gridLayers.map(render)}</div>
+          {glowLayers.map(render)}
         </>
-      )}
-
-      {style === 'mesh' && (
-        <>
-          <div className="bgfx-mesh-wrap">
-            <div
-              className="bgfx-mesh"
-              style={{
-                backgroundImage: `linear-gradient(rgba(${rgbA}, 0.16) 1px, transparent 1px), linear-gradient(90deg, rgba(${rgbA}, 0.16) 1px, transparent 1px)`,
-                backgroundSize: '44px 44px',
-              }}
-            />
-          </div>
-          <div
-            className="bgfx-mesh-glow"
-            style={{
-              background: `linear-gradient(180deg, rgba(${rgbB}, 0.22), transparent 62%)`,
-            }}
-          />
-        </>
+      ) : (
+        layers.map(render)
       )}
 
       {style === 'starfield' && <canvas ref={canvasRef} className="bgfx-canvas" />}

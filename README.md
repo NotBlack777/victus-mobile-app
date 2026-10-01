@@ -60,6 +60,57 @@ bun test
 node scripts/verify-webview.mjs app/build/generated/reactAssets
 ```
 
+## 🔌 Live panel check (real sign-in, real servers)
+
+`tools/panel-check` drives the app's *own* network code — the same `VictusApi` and
+`VictusHttp` classes the APK ships — so the panel contract can be verified in
+seconds, without a device and without reimplementing a single request:
+
+```bash
+# 1. Compile the shipped client together with the check tool (JDK 17)
+export JAVA_HOME=/opt/jdk17                    # or your own JDK 17 home
+JSON=$(find "$HOME/.gradle" /root/.gradle -name 'json-20*.jar' 2>/dev/null | head -1)
+mkdir -p build/panel-check
+"$JAVA_HOME/bin/javac" -encoding UTF-8 -cp "$JSON" -d build/panel-check \
+  app/src/main/java/com/victuscloud/ecosystem/VictusApi.java \
+  app/src/main/java/com/victuscloud/ecosystem/VictusHttp.java \
+  tools/panel-check/MockPanel.java tools/panel-check/PanelCheck.java
+
+# 2. Sign in and act on a real server
+"$JAVA_HOME/bin/java" -cp "build/panel-check:$JSON" com.victuscloud.ecosystem.PanelCheck \
+  --api-key <8-char identifier><ptlc_…>          # Account → API Credentials
+"$JAVA_HOME/bin/java" -cp "build/panel-check:$JSON" com.victuscloud.ecosystem.PanelCheck \
+  --user you@example.com --password '…'          # or the account password
+```
+
+Options: `--server <uuid>` (default: the first running server), `--power
+start|stop|restart|kill`, `--command "<console command>"`, `--totp <code>`. The
+credential can come from the environment instead (`VICTUS_API_KEY`,
+`VICTUS_PANEL_USER`, `VICTUS_PANEL_PASSWORD`, `VICTUS_PANEL_TOTP`), and is only
+ever printed masked. The exit code is 0 only when every step succeeded.
+
+Each step prints the real HTTP status and the panel's own response body:
+account → `GET /api/client` (the fleet) → `POST …/power` → `POST …/command` →
+`GET …/resources`, so the effect of a power action is read back rather than
+assumed.
+
+### Local contract fixture
+
+`sh ./tools/panel-check/mock-check.sh` runs the identical chain against
+`MockPanel`, a contract-faithful HTTPS server, over real TLS sockets on the real
+hostname — no production code is bypassed and no credential is involved. It mints
+its own throwaway certificate and points the hostname at loopback with
+`-Djdk.net.hosts.file=tools/panel-check/test-hosts`, because the client refuses to
+attach a credential to any URL that is not `https://control.victuscloud.com`
+(`VictusApi.isAcceptableUrl`) and that rule is not worth weakening for a test.
+
+The fixture enforces the panel's rules rather than playing along, including the
+trap that matters most: `GET /auth/login` hands out a *stale*
+`<meta name="csrf-token">` while the live token rides in the `XSRF-TOKEN` cookie,
+so a client that sends the meta value is answered with 419 — which is why
+`VictusHttp` prefers the cookie. Power signals really move the fixture's server
+state, and `GET …/resources` reports the result.
+
 ## 🔑 Release signing
 
 Every APK must carry the **same** signature, or Android refuses to install it

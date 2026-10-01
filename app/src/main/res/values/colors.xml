@@ -6,7 +6,6 @@
          three stops, so first launch and "Reset to default" always match. -->
     <color name="brand_a">#C084FC</color>
     <color name="brand_b">#7C3AED</color>
-    <color name="brand_c">#0B0014</color>
 
     <!-- Chrome colors — these are the LIGHT values; values-night/colors.xml
          overrides every one of them so the native chrome follows the system theme
@@ -23,7 +22,6 @@
     <color name="overlay_bg">#FAF8FD</color>
     <color name="error_title">#1A0B2E</color>
     <color name="error_text">#5C5470</color>
-    <color name="progress">@color/brand_a</color>
     <color name="splash_bg">#FBFAFF</color>
     <color name="adaptive_icon_bg">#0B0014</color>
 
@@ -32,4 +30,8 @@
     <color name="sheet_stroke">#1F1A0B2E</color>
     <color name="sheet_handle">#332E1065</color>
     <color name="swatch_stroke">#332E1065</color>
+
+    <!-- Translucent glass card used by the native sheets (device, updates). -->
+    <color name="menu_bg">#F20C0C14</color>
+    <color name="menu_stroke">#14FFFFFF</color>
 </resources>

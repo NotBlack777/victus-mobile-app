@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MessageSquare, LifeBuoy, X, Send, ExternalLink } from 'lucide-react';
 import { useToast } from './Toast.tsx';
+import { shellSetDragging, shellSetDragRegion } from '../services/victusBridge.ts';
 
 interface FloatingChatBubbleProps {
   onNavigateSupport: () => void;
@@ -9,18 +10,37 @@ interface FloatingChatBubbleProps {
 const STORAGE_KEY = 'victus_chat_bubble_pos_v2';
 const BUBBLE_SIZE = 54; // px
 const MARGIN = 12; // margin from frame edges
-const TOP_BAR_HEIGHT = 60;
+// The bottom dock's height is reserved so the bubble never parks on top of the
+// channel chips and makes them untappable. The header is deliberately NOT
+// reserved — see clampToFrame.
 const DOCK_BAR_HEIGHT = 68;
 
-// Clamp within the app frame (the nearest positioned ancestor), not the window,
-// so the bubble never escapes the phone shell on desktop.
+/**
+ * How far a pointer may travel before the gesture counts as a drag rather than
+ * a tap. Must be under the platform's own scroll/tap separation (~15px) so a
+ * genuine drag still reads as a drag, and above finger jitter so a tap is not
+ * mistaken for one.
+ */
+const TAP_DRAG_THRESHOLD_PX = 10;
+
+// Clamp within the app frame — the nearest positioned ancestor.
+//
+// The shell is exactly one screen tall and position:relative, so the frame
+// and the viewport are the same box and the bubble can never be parked in a
+// blank region below the content. (An earlier attempt made the shell grow
+// with the document and the bubble position:fixed instead; that left a blank
+// tail under the content, so that attempt is being reverted.)
 function clampToFrame(x: number, y: number): { x: number; y: number } {
   const frame = document.querySelector('.app-shell');
   const w = frame ? frame.clientWidth : window.innerWidth;
   const h = frame ? frame.clientHeight : window.innerHeight;
   const minX = MARGIN;
   const maxX = Math.max(MARGIN, w - BUBBLE_SIZE - MARGIN);
-  const minY = TOP_BAR_HEIGHT + 8;
+  // The top bound used to be TOP_BAR_HEIGHT + 8, which pinned the bubble below
+  // the header — the reported "can't be moved up". The header is a sibling that
+  // the bubble is allowed to sit over, so the only real limits are the frame
+  // edges and the bottom dock, which must stay tappable underneath.
+  const minY = MARGIN;
   const maxY = Math.max(minY, h - DOCK_BAR_HEIGHT - BUBBLE_SIZE - MARGIN);
   return {
     x: Math.min(Math.max(x, minX), maxX),
@@ -49,6 +69,64 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ onNaviga
     if (typeof window === 'undefined') return candidate;
     return clampToFrame(candidate.x, candidate.y);
   });
+
+  const bubbleRef = useRef<HTMLButtonElement | null>(null);
+
+  // Tell the shell where the bubble is, so it can protect a touch that lands on
+  // it during ACTION_DOWN — before pull-to-refresh gets a chance to intercept.
+  // Reported whenever the bubble moves, and scaled by devicePixelRatio so the
+  // numbers line up with the MotionEvent coordinates the shell compares them to.
+  useEffect(() => {
+    let frame = 0;
+    let settleTimer: number | null = null;
+    const measure = () => {
+      const node = bubbleRef.current;
+      if (!node) {
+        shellSetDragRegion(null);
+        return;
+      }
+      const rect = node.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      // A zero-area rect would silently disable the protection, which is the
+      // exact failure this exists to prevent, so report a point rather than
+      // nothing when layout has not happened yet.
+      shellSetDragRegion({
+        left: rect.left * dpr,
+        top: rect.top * dpr,
+        right: Math.max(rect.right, rect.left + 1) * dpr,
+        bottom: Math.max(rect.bottom, rect.top + 1) * dpr,
+      });
+    };
+    const report = () => {
+      frame = 0;
+      measure();
+      // The button animates its transform (duration-75), so a reading taken
+      // during a drag describes where the bubble is passing through, not where
+      // it ends up. Re-measure once it has settled, so the shell is never
+      // left protecting a rectangle the bubble has already left.
+      if (settleTimer !== null) window.clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(() => {
+        settleTimer = null;
+        measure();
+      }, 160);
+    };
+    const schedule = () => {
+      if (frame !== 0) return;
+      frame = window.requestAnimationFrame(report);
+    };
+    schedule();
+    window.addEventListener('resize', schedule);
+    window.addEventListener('orientationchange', schedule);
+    return () => {
+      if (frame !== 0) window.cancelAnimationFrame(frame);
+      if (settleTimer !== null) window.clearTimeout(settleTimer);
+      window.removeEventListener('resize', schedule);
+      window.removeEventListener('orientationchange', schedule);
+      // Leaving a stale region behind would let an invisible box swallow
+      // pull-to-refresh gestures on a screen the bubble no longer occupies.
+      shellSetDragRegion(null);
+    };
+  }, [position.x, position.y]);
 
   const [isDragging, setIsDragging] = useState(false);
   const [isChatModalOpen, setIsChatModalOpen] = useState(false);
@@ -96,7 +174,16 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ onNaviga
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [clampPosition]);
+  }, []);
+
+  // Cancel a pending simulated reply when the chat bubble unmounts.
+  const replyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (replyTimerRef.current !== null) clearTimeout(replyTimerRef.current);
+    },
+    []
+  );
 
   // Pointer event handlers for silky drag + drop across touch and mouse
   const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -104,6 +191,9 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ onNaviga
     if (e.button !== 0) return;
 
     const target = e.currentTarget;
+    // Capture the pointer so every subsequent move/up lands on the bubble even
+    // when the finger leaves it — without this a drag that outruns the 54px
+    // target simply stops, which is why the bubble "couldn't be moved up".
     target.setPointerCapture(e.pointerId);
 
     dragStartRef.current = {
@@ -114,6 +204,9 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ onNaviga
       hasMoved: false,
     };
     setIsDragging(true);
+    // Tell the shell a custom drag started, so pull-to-refresh does not claim
+    // the vertical part of the gesture and turn every drag into a refresh.
+    shellSetDragging(true);
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -123,7 +216,11 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ onNaviga
     const deltaY = e.clientY - dragStartRef.current.startY;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
-    if (distance > 5) {
+    // A small threshold separates a tap from a drag. 5px was too small: a
+    // slightly shaky tap crossed it and was treated as a drag, so tapping the
+    // bubble did nothing at all. 10px is below the ~15px the platform uses to
+    // distinguish a scroll from a tap, so a real drag still reads as a drag.
+    if (distance > TAP_DRAG_THRESHOLD_PX) {
       dragStartRef.current.hasMoved = true;
     }
 
@@ -134,29 +231,60 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ onNaviga
     setPosition(clamped);
   };
 
-  const handlePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+  const endDrag = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (!isDragging) return;
 
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {
-      // Ignored
+      // The pointer may already have been released by the browser.
     }
 
     setIsDragging(false);
+    shellSetDragging(false);
 
-    // Save final position to localStorage
-    const finalPos = clampPosition(position.x, position.y);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(finalPos));
-    } catch {
-      // Ignored
-    }
+    // Persist using the position this gesture actually produced. Reading
+    // `position` from the closure here returned the value from *before* the
+    // last move, so a drag ended by lifting the finger saved a stale spot and
+    // the bubble jumped back on the next launch.
+    setPosition((latest) => {
+      const finalPos = clampPosition(latest.x, latest.y);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(finalPos));
+      } catch {
+        // Storage may be unavailable; the in-memory position still holds.
+      }
+      return finalPos;
+    });
 
     // Tap detection: if barely moved, treat as a tap/click
     if (!dragStartRef.current.hasMoved) {
       setIsChatModalOpen(true);
     }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    endDrag(e);
+  };
+
+  // A gesture the browser takes over (a system edge-swipe, an incoming call)
+  // never delivers pointerup. Ending the drag here is what stops the bubble
+  // being stuck in the dragging state, unable to move or be tapped, until the
+  // app is restarted.
+  const handlePointerCancel = (e: React.PointerEvent<HTMLButtonElement>) => {
+    endDrag(e);
+  };
+
+  // Keyboard/assistive activation never fires a pointer event, so the button
+  // needs a real click handler too or it is unreachable without a touchscreen.
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    // The pointer handlers already opened the chat on a tap; only handle
+    // activations that did not come from one.
+    if (dragStartRef.current.hasMoved) {
+      dragStartRef.current.hasMoved = false;
+      return;
+    }
+    e.preventDefault();
   };
 
   const handleSendMessage = (e: React.FormEvent) => {
@@ -170,8 +298,12 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ onNaviga
       { sender: 'user', text: userText, time: 'Now' },
     ]);
 
-    // Simulated reply
-    setTimeout(() => {
+    // Simulated reply — the timer is tracked so it can be cancelled on unmount.
+    // Any previous pending reply is cleared first: sending a second message
+    // used to overwrite the ref, orphaning the first timer so it fired after
+    // unmount (a setState on a dead component) and could never be cancelled.
+    if (replyTimerRef.current !== null) clearTimeout(replyTimerRef.current);
+    replyTimerRef.current = setTimeout(() => {
       setChatHistory((prev) => [
         ...prev,
         {
@@ -188,13 +320,17 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ onNaviga
       {/* Draggable Floating Chat Ball */}
       <button
         type="button"
+        ref={bubbleRef}
         aria-label="Open support chat"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerCancel={() => setIsDragging(false)}
+        onPointerCancel={handlePointerCancel}
+        onClick={handleClick}
         style={{
           transform: `translate3d(${position.x}px, ${position.y}px, 0)`,
+          // 'none' is what makes the bubble draggable at all: without it the
+          // browser claims the gesture for scrolling the page underneath.
           touchAction: 'none',
         }}
         className={`absolute top-0 left-0 z-overlay w-[54px] h-[54px] rounded-full bg-white text-slate-900 shadow-[0_8px_28px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.2)] flex items-center justify-center cursor-grab active:cursor-grabbing transition-transform duration-75 select-none ${

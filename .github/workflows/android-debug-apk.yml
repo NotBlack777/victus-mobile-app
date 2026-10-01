@@ -69,7 +69,7 @@ jobs:
             will reject it."
           fi
 
-      - name: Build APK and run updater unit tests
+      - name: Build APKs and run unit tests
         env:
           VICTUS_KEYSTORE_FILE: release.keystore
           VICTUS_STORE_PASSWORD: ${{ secrets.VICTUS_STORE_PASSWORD }}
@@ -77,66 +77,113 @@ jobs:
           VICTUS_KEY_PASSWORD: ${{ secrets.VICTUS_KEY_PASSWORD }}
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleDebug testDebugUnitTest --no-daemon --console=plain
+          # Both variants on every run: the debug build is the fast artifact
+          # people sideload, the release build is the minified+shrunk one that
+          # goes on the GitHub Release. Both are signed with the same release
+          # key (see app/build.gradle), so either can upgrade an install.
+          ./gradlew assembleDebug assembleRelease testDebugUnitTest --no-daemon --console=plain
 
-      - name: Verify APK signature
+      # The web unit tests, which include the guards on the backdrop's opacity,
+      # size and reduced-motion behaviour.
+      - name: Web unit tests
+        run: bun test
+
+      # Grades the animated backdrop on real pixels: screenshots the built app
+      # and measures how much of it actually moves. The background shipped for
+      # several releases with every keyframe running and nothing visibly
+      # changing, which is exactly the failure a unit test cannot see.
+      - name: Backdrop visibility check
+        run: |
+          bunx playwright install --with-deps chromium
+          node scripts/verify-backdrop.mjs
+
+      # Performs the actual gestures with real input events — scroll, drag the
+      # chat bubble, tap it — against the staged APK assets. Every previous
+      # verification either asserted the source was correct or checked that a
+      # page loaded; neither ever moved anything, which is how "the page does
+      # not scroll" and "the bubble will not move" both survived green runs.
+      - name: Gesture check (scroll, drag, tap)
+        run: |
+          bunx playwright install --with-deps chromium
+          node scripts/verify-gestures.mjs app/build/generated/reactAssets
+
+      # Drives the app's own VictusApi/VictusHttp against a contract-faithful
+      # panel over real TLS sockets: sign-in, server list, power, console. Needs
+      # port 443, so it skips itself (exit 3) on a runner that cannot bind it.
+      - name: Panel contract check (local fixture)
+        run: sh ./tools/panel-check/mock-check.sh
+
+      - name: Verify APK signatures
         env:
           VICTUS_KEYSTORE_BASE64: ${{ secrets.VICTUS_KEYSTORE_BASE64 }}
         run: |
-          APK=app/build/outputs/apk/debug/app-debug.apk
           APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-          "$APKSIGNER" verify --verbose "$APK"
+          for APK in app/build/outputs/apk/debug/app-debug.apk \
+                     app/build/outputs/apk/release/app-release.apk; do
+            "$APKSIGNER" verify --verbose "$APK"
+            SIGNER=$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate DN: //p')
+            echo "$APK signer: $SIGNER"
 
-          SIGNER=$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate DN: //p')
-          echo "Signer: $SIGNER"
-
-          if [ -n "$VICTUS_KEYSTORE_BASE64" ] && ! printf '%s' "$SIGNER" | grep -q 'CN=Victus Cloud'; then
-            echo "::error::Expected the release keystore's certificate (CN=Victus Cloud) but found: $SIGNER"
-            exit 1
-          fi
+            if [ -n "$VICTUS_KEYSTORE_BASE64" ] && ! printf '%s' "$SIGNER" | grep -q 'CN=Victus Cloud'; then
+              echo "::error::Expected the release keystore's certificate (CN=Victus Cloud) for $APK but found: $SIGNER"
+              exit 1
+            fi
+          done
 
       - name: Report APK details
         run: |
-          APK=app/build/outputs/apk/debug/app-debug.apk
           BUILDTOOLS="$ANDROID_HOME/build-tools/35.0.0"
           {
-            echo "### APK"
+            echo "### APKs"
             echo
-            echo "| Field | Value |"
-            echo "| --- | --- |"
-            echo "| Path | \`$APK\` |"
-            echo "| Size | $(du -h "$APK" | cut -f1) |"
-            echo "| SHA-256 | \`$(sha256sum "$APK" | cut -d' ' -f1)\` |"
-            echo "| Version | $("$BUILDTOOLS/aapt2" dump badging "$APK" | head -1 | sed -E "s/.*versionCode='([0-9]+)' versionName='([^']+)'.*/v\\1 (\\2)/") |"
-            echo "| Signer | $("$BUILDTOOLS/apksigner" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate DN: //p') |"
-            echo "| Cert SHA-256 | \`$("$BUILDTOOLS/apksigner" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')\` |"
+            echo "| Build | Size | SHA-256 | Version | Signer |"
+            echo "| --- | --- | --- | --- | --- |"
+            for APK in app/build/outputs/apk/debug/app-debug.apk \
+                       app/build/outputs/apk/release/app-release.apk; do
+              echo "| \`$APK\` | $(du -h "$APK" | cut -f1) | \`$(sha256sum "$APK" | cut -d' ' -f1)\` | $("$BUILDTOOLS/aapt2" dump badging "$APK" | head -1 | sed -E "s/.*versionCode='([0-9]+)' versionName='([^']+)'.*/v\\1 (\\2)/") | $("$BUILDTOOLS/apksigner" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate DN: //p') |"
+            done
+            echo
+            echo "Release certificate SHA-256: \`$("$BUILDTOOLS/apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload debug APK
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: victus-cloud-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: victus-cloud-apks
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
-
-      - name: Note skipped release (tag without signing secrets)
-        if: startsWith(github.ref, 'refs/tags/v') && secrets.VICTUS_KEYSTORE_BASE64 == ''
-        run: |
-          echo "::warning::Tagged build was NOT published as a release. Add the \
-          VICTUS_KEYSTORE_BASE64 / VICTUS_STORE_PASSWORD / VICTUS_KEY_ALIAS / \
-          VICTUS_KEY_PASSWORD repository secrets so tagged builds are signed with \
-          the stable release key and can upgrade an existing install."
 
       # Only publish when the release keystore is configured. An unsigned (or
       # runner-debug-signed) APK published as a release would be rejected by the
       # in-app updater and could not be installed over the current app, so it is
       # better to publish nothing than a build nobody can install.
+      #
+      # The keystore check lives in the script, not in an `if:` condition: the
+      # `secrets` context is not available to `jobs.<job_id>.steps.if` (only
+      # github, needs, strategy, matrix, job, runner, env, vars, steps, inputs
+      # are), and referencing it there makes the whole workflow invalid so every
+      # run fails at startup with "This run likely failed because of a workflow
+      # file issue" and no jobs at all.
       - name: Publish release (version tags only)
-        if: startsWith(github.ref, 'refs/tags/v') && secrets.VICTUS_KEYSTORE_BASE64 != ''
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VICTUS_KEYSTORE_BASE64: ${{ secrets.VICTUS_KEYSTORE_BASE64 }}
         run: |
-          APK=app/build/outputs/apk/debug/app-debug.apk
+          if [ -z "$VICTUS_KEYSTORE_BASE64" ]; then
+            echo "::warning::Tagged build was NOT published as a release. Add the \
+          VICTUS_KEYSTORE_BASE64 / VICTUS_STORE_PASSWORD / VICTUS_KEY_ALIAS / \
+          VICTUS_KEY_PASSWORD repository secrets so tagged builds are signed with \
+          the stable release key and can upgrade an existing install."
+            exit 0
+          fi
+
+          APK=app/build/outputs/apk/release/app-release.apk
+          # Exactly one .apk on the release: the in-app updater reads the release
+          # assets and picks an .apk, so a second one would make which build the
+          # updater installs depend on GitHub's asset ordering.
           gh release create "$GITHUB_REF_NAME" \
             "$APK#victus-cloud-$GITHUB_REF_NAME.apk" \
             --title "Victus Cloud $GITHUB_REF_NAME" \

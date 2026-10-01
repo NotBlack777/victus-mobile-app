@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { ThemeConfig, ThemePreset, ColorMode, BackgroundStyle } from '../types.ts';
+import { ThemeConfig, ThemePreset, ColorMode, BackgroundStyle, DisplayPanel } from '../types.ts';
 import { CSS_VAR_NAMES, TOKEN_KEYS, hexToRgb, resolveAccents, resolveTokens } from '../theme/palettes.ts';
+import { shellSetColorMode } from '../services/victusBridge.ts';
 
 export {
   DEFAULT_A,
@@ -23,6 +24,7 @@ interface ThemeContextType {
   setOpenLinksExternally: (openExternal: boolean) => void;
   setColorMode: (mode: ColorMode) => void;
   setBackground: (style: BackgroundStyle) => void;
+  setPanel: (panel: DisplayPanel) => void;
   toggleColorMode: () => void;
   resetToDefault: () => void;
 }
@@ -38,9 +40,29 @@ const initialConfig: ThemeConfig = {
   colorMode: 'dark',
   openLinksExternally: false,
   background: 'aurora',
+  panel: 'lcd',
 };
 
 const ThemeContext = createContext<ThemeContextType | null>(null);
+
+/**
+ * Live bridge from the Android shell: MainActivity evaluates the same config
+ * object whenever the native Appearance sheet changes something, so both
+ * surfaces stay in lockstep while the app runs. Keys mirror ThemeConfig.
+ */
+interface NativeThemeEvent extends CustomEvent {
+  detail: {
+    preset?: ThemePreset;
+    customA?: string;
+    customB?: string;
+    isCustomSolid?: boolean;
+    reduceMotion?: boolean;
+    colorMode?: ColorMode;
+    background?: BackgroundStyle;
+    panel?: DisplayPanel;
+    isDark?: boolean;
+  };
+}
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [config, setConfig] = useState<ThemeConfig>(() => {
@@ -113,12 +135,49 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       root.classList.remove('reduce-motion');
     }
 
+    // OLED panels get a true-black canvas. This is a class rather than a token
+    // because it also has to switch off the always-on grid overlay, which would
+    // otherwise light the whole panel up again.
+    //
+    // Only while dark: true black is a dark-panel setting, and leaving the
+    // class on in light mode would paint a black canvas under light text. The
+    // stored preference is untouched, so switching back to Dark restores it.
+    if (config.panel === 'oled' && isDark) {
+      root.classList.add('oled');
+    } else {
+      root.classList.remove('oled');
+    }
+
     // Paint the palette for the active preset + colour mode.
-    const tokens = resolveTokens(config.preset, isDark, gradientColors);
+    const tokens = resolveTokens(config.preset, isDark, gradientColors, config.panel);
     TOKEN_KEYS.forEach((key) => {
       root.style.setProperty(CSS_VAR_NAMES[key], tokens[key]);
     });
   }, [config, gradientColors, isDark]);
+
+  // Native-shell bridge: mirror config changes coming from the Android
+  // Appearance sheet (Tools → Settings) into web state. Skipped when the
+  // message didn't originate from the shell.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handler = (event: Event) => {
+      const detail = (event as NativeThemeEvent).detail || {};
+      setConfig((prev) => {
+        let next = prev;
+        if (detail.preset && detail.preset !== prev.preset) next = { ...next, preset: detail.preset };
+        if (detail.customA) next = { ...next, customA: detail.customA };
+        if (detail.customB) next = { ...next, customB: detail.customB };
+        if (typeof detail.isCustomSolid === 'boolean') next = { ...next, isCustomSolid: detail.isCustomSolid };
+        if (typeof detail.reduceMotion === 'boolean') next = { ...next, reduceMotion: detail.reduceMotion };
+        if (detail.colorMode) next = { ...next, colorMode: detail.colorMode };
+        if (detail.background) next = { ...next, background: detail.background };
+        if (detail.panel) next = { ...next, panel: detail.panel };
+        return next;
+      });
+    };
+    window.addEventListener('victus:theme', handler);
+    return () => window.removeEventListener('victus:theme', handler);
+  }, []);
 
   const setPreset = useCallback((preset: ThemePreset) => {
     setConfig((prev) => ({ ...prev, preset }));
@@ -144,22 +203,40 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const setColorMode = useCallback((mode: ColorMode) => {
     setConfig((prev) => ({ ...prev, colorMode: mode }));
+    // Hand the choice to the shell as well. In the APK the native layer owns
+    // the persisted value and re-asserts it on every theme injection, so a
+    // web-only change is reverted on the next one — which is exactly why the
+    // header's light/dark button appeared to do nothing. No-op in a browser.
+    shellSetColorMode(mode);
   }, []);
 
   const setBackground = useCallback((style: BackgroundStyle) => {
     setConfig((prev) => ({ ...prev, background: style }));
   }, []);
 
+  const setPanel = useCallback((panel: DisplayPanel) => {
+    setConfig((prev) => ({ ...prev, panel }));
+  }, []);
+
   const toggleColorMode = useCallback(() => {
     setConfig((prev) => {
       const nextIsDark =
         prev.colorMode === 'system' ? !systemIsDark : prev.colorMode === 'dark' ? false : true;
-      return { ...prev, colorMode: nextIsDark ? 'dark' : 'light' };
+      const next: ColorMode = nextIsDark ? 'dark' : 'light';
+      // Same reason as setColorMode: the shell has to hear about it, or it will
+      // revert on the next theme injection. Toggling always lands on an
+      // explicit Dark or Light, never back to System, so the button and the
+      // Appearance → Display mode row can never disagree about what is active.
+      shellSetColorMode(next);
+      return { ...prev, colorMode: next };
     });
   }, [systemIsDark]);
 
   const resetToDefault = useCallback(() => {
     setConfig(initialConfig);
+    // Reset also has to reach the shell, or the native bars stay whatever the
+    // user had before the reset while the web app went back to the default.
+    shellSetColorMode(initialConfig.colorMode);
   }, []);
 
   const value = useMemo(
@@ -174,6 +251,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setOpenLinksExternally,
       setColorMode,
       setBackground,
+      setPanel,
       toggleColorMode,
       resetToDefault,
     }),
@@ -188,6 +266,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setOpenLinksExternally,
       setColorMode,
       setBackground,
+      setPanel,
       toggleColorMode,
       resetToDefault,
     ]

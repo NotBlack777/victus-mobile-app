@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import {
   VictusService,
-  REAL_VICTUS_SERVICES,
   getFleetStats,
   getNodeSummaries,
   formatMiB,
@@ -29,14 +28,23 @@ interface ControlDashboardProps {
   services?: VictusService[];
   onSelectService: (service: VictusService) => void;
   onNavigateTab?: (url: string, title?: string, tabId?: string) => void;
+  /** True when `services` came from the account's own panel session. */
+  isLive?: boolean;
+  /** Panel error from the last server read, if it failed. */
+  liveError?: string | null;
+  /** Re-reads the fleet from the panel. */
+  onRefreshServers?: () => void;
 }
 
 type FilterTab = 'all' | 'game' | 'vps';
 
 export const ControlDashboard: React.FC<ControlDashboardProps> = ({
-  services = REAL_VICTUS_SERVICES,
+  services = [],
   onSelectService,
   onNavigateTab,
+  isLive = false,
+  liveError = null,
+  onRefreshServers,
 }) => {
   const { showToast } = useToast();
   const { config } = useTheme();
@@ -78,6 +86,34 @@ export const ControlDashboard: React.FC<ControlDashboardProps> = ({
           <Compass className="w-3.5 h-3.5 text-violet-400" />
           <span>FLEET OVERVIEW</span>
         </div>
+
+        {/*
+          Source banner. The fleet below is either the account's real servers or the
+          sample set, and the user is told which — a dashboard of plausible-looking
+          servers that are not yours is worse than no dashboard.
+        */}
+        {isLive ? (
+          <div className="mt-3 flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/25">
+            <span className="flex items-center gap-2 text-[11px] font-semibold text-emerald-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Live from control.victuscloud.com
+            </span>
+            {onRefreshServers && (
+              <button
+                onClick={onRefreshServers}
+                className="text-[10px] font-bold uppercase tracking-wide text-emerald-300 hover:text-emerald-100 cursor-pointer"
+              >
+                Refresh
+              </button>
+            )}
+          </div>
+        ) : null}
+
+        {liveError && (
+          <div className="mt-2 px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/25 text-[11px] text-rose-200">
+            {liveError}
+          </div>
+        )}
 
         {/* Headline */}
         <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight leading-snug">
@@ -570,7 +606,7 @@ export const ControlDashboard: React.FC<ControlDashboardProps> = ({
         </div>
         <button
           onClick={() => {
-            openVictusLink('http://billing.victuscloud.com', {
+            openVictusLink('https://billing.victuscloud.com', {
               openLinksExternally: config.openLinksExternally,
               onNavigateInApp: onNavigateTab,
               showToast,

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 
 interface Toast {
   id: string;
@@ -14,15 +14,28 @@ const ToastContext = createContext<ToastContextType | null>(null);
 
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const timersRef = useRef(new Set<ReturnType<typeof setTimeout>>());
 
   const showToast = useCallback((message: string, type: 'info' | 'success' | 'error' = 'info') => {
     const id = Math.random().toString(36).substring(2, 9);
     setToasts((prev) => [...prev, { id, message, type }]);
 
-    setTimeout(() => {
+    // Tracked so the provider can cancel every pending dismissal when it
+    // unmounts, instead of leaving timers to fire setState on a dead tree.
+    const timer = setTimeout(() => {
+      timersRef.current.delete(timer);
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 3200);
+    timersRef.current.add(timer);
   }, []);
+
+  useEffect(
+    () => () => {
+      timersRef.current.forEach(clearTimeout);
+      timersRef.current.clear();
+    },
+    []
+  );
 
   return (
     <ToastContext.Provider value={{ showToast }}>

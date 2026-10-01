@@ -1,7 +1,6 @@
 import './dom-shim.ts';
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { fireStorageEvent, openCalls, removeItem, resetStorage, seedItem, storage } from './dom-shim.ts';
-import { authService, getStoredSession } from '../src/services/authService.ts';
+import { openCalls, resetStorage, seedItem, storage } from './dom-shim.ts';
 import { notificationService } from '../src/services/notificationService.ts';
 import { openVictusLink } from '../src/utils/navigation.ts';
 import {
@@ -12,114 +11,11 @@ import {
   formatMiB,
 } from '../src/services/controlData.ts';
 
-const AUTH_KEY = 'victus_auth_session';
+// Auth coverage lives in tests/auth.test.ts, which drives the native bridge.
 const NOTIFICATION_KEY = 'victus_notifications_v1';
 
 beforeEach(() => {
   resetStorage();
-});
-
-describe('authService', () => {
-  test('rejects a malformed email', async () => {
-    const res = await authService.signIn('not-an-email', 'victus2026');
-    expect(res.session).toBeNull();
-    expect(res.user).toBeNull();
-    expect(res.error?.message).toContain('valid email');
-    expect(storage.getItem(AUTH_KEY)).toBeNull();
-  });
-
-  test('rejects a password shorter than 6 characters', async () => {
-    const res = await authService.signIn('admin@victuscloud.com', '12345');
-    expect(res.session).toBeNull();
-    expect(res.error?.message).toContain('at least 6 characters');
-  });
-
-  test('normalises the email and persists a session getStoredSession can read back', async () => {
-    const res = await authService.signIn('  Admin@VictusCloud.com ', 'victus2026');
-    expect(res.error).toBeNull();
-    expect(res.session?.user.email).toBe('admin@victuscloud.com');
-    expect(res.session?.user.user_metadata.role).toBe('Administrator');
-
-    const stored = getStoredSession();
-    expect(stored?.access_token).toBe(res.session?.access_token);
-    expect(stored?.user.email).toBe('admin@victuscloud.com');
-  });
-
-  test('signUp keeps an explicit name and derives one from the email otherwise', async () => {
-    const named = await authService.signUp('dev@victuscloud.com', 'victus2026', 'Icy Dev');
-    expect(named.session?.user.user_metadata.name).toBe('Icy Dev');
-
-    const derived = await authService.signUp('plain@victuscloud.com', 'victus2026');
-    expect(derived.session?.user.user_metadata.name).toBe('plain');
-  });
-
-  test('signOut clears the persisted session and emits SIGNED_OUT', async () => {
-    await authService.signIn('admin@victuscloud.com', 'victus2026');
-
-    const events: string[] = [];
-    const { unsubscribe } = authService.onAuthStateChange((event) => events.push(event));
-    expect(events).toEqual(['INITIAL_SESSION']);
-
-    await authService.signOut();
-
-    expect(getStoredSession()).toBeNull();
-    expect(events).toEqual(['INITIAL_SESSION', 'SIGNED_OUT']);
-    unsubscribe();
-  });
-
-  test('discards a corrupt stored session instead of fabricating a user', () => {
-    seedItem(AUTH_KEY, '{not-valid-json');
-    expect(getStoredSession()).toBeNull();
-    expect(storage.getItem(AUTH_KEY)).toBeNull();
-  });
-
-  test('discards an expired stored session', () => {
-    seedItem(
-      AUTH_KEY,
-      JSON.stringify({
-        access_token: 'vic_expired',
-        expires_at: Date.now() - 1000,
-        user: { id: 'usr_1', email: 'old@victuscloud.com' },
-      })
-    );
-    expect(getStoredSession()).toBeNull();
-    expect(storage.getItem(AUTH_KEY)).toBeNull();
-  });
-
-  test('discards a stored session that has no user', () => {
-    seedItem(AUTH_KEY, JSON.stringify({ access_token: 'vic_x', expires_at: Date.now() + 60_000 }));
-    expect(getStoredSession()).toBeNull();
-  });
-
-  test('unsubscribe stops auth events for that listener only', async () => {
-    const first: string[] = [];
-    const second: string[] = [];
-    const a = authService.onAuthStateChange(() => first.push('hit'));
-    const b = authService.onAuthStateChange(() => second.push('hit'));
-
-    a.unsubscribe();
-    await authService.signIn('admin@victuscloud.com', 'victus2026');
-
-    expect(first).toHaveLength(1); // only the initial emission
-    expect(second).toHaveLength(2); // initial + signed in
-    b.unsubscribe();
-  });
-
-  test('a sign-out in another tab updates this tab immediately', async () => {
-    await authService.signIn('admin@victuscloud.com', 'victus2026');
-
-    let latest: unknown = 'unset';
-    const { unsubscribe } = authService.onAuthStateChange((_event, session) => {
-      latest = session;
-    });
-    expect(latest).not.toBeNull();
-
-    removeItem(AUTH_KEY);
-    fireStorageEvent(AUTH_KEY);
-
-    expect(latest).toBeNull();
-    unsubscribe();
-  });
 });
 
 describe('notificationService', () => {

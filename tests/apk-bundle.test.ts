@@ -105,4 +105,32 @@ describe.skipIf(skip)('Android debug APK bundle', () => {
     expect(dex).toContain(`${WEBVIEW_ASSET_HOST}/index.html`);
     expect(dex).not.toContain('/assets/home.html');
   });
+
+  test('the Web View path is native and no longer needs a dev server', () => {
+    const html = apkEntry('assets/index.html').toString('utf8');
+    const jsRef = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+\.js)"/g)].map((m) => m[1])[0];
+    expect(jsRef).toBeTruthy();
+
+    const bundle = apkEntry(`assets${jsRef}`).toString('utf8');
+
+    // The Vite dev-server preview middleware (vite.config.ts configureServer) is
+    // the only thing that ever answered /api/proxy, so nothing shipped may point
+    // at it: an APK has no dev server, and the framed portals answer
+    // x-frame-options DENY/SAMEORIGIN anyway.
+    expect(bundle).not.toContain('/api/proxy');
+    expect(bundle).not.toContain('/api/website-preview');
+
+    // "Web View" goes through the native in-app browser bridge instead …
+    expect(bundle).toContain('VictusNative');
+    expect(bundle).toContain('openWebView');
+
+    // … whose native half must actually be compiled into the APK.
+    const dex = apkEntries()
+      .filter((e) => /^classes\d*\.dex$/.test(e))
+      .map((name) => apkEntry(name).toString('latin1'))
+      .join('');
+    expect(dex).toContain('VictusNative');
+    expect(dex).toContain('openWebView');
+    expect(dex).toContain('InAppBrowser');
+  });
 });

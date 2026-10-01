@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Check, RotateCcw, LogOut, ExternalLink } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext.tsx';
-import { BACKGROUND_OPTIONS, THEME_PRESET_OPTIONS } from '../theme/palettes.ts';
+import { BACKGROUND_OPTIONS, PANEL_OPTIONS, THEME_PRESET_OPTIONS } from '../theme/palettes.ts';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useToast } from './Toast.tsx';
 
@@ -20,12 +20,14 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({ isOpen, onClose })
   const {
     config,
     gradientColors,
+    isDark,
     setPreset,
     setCustomColors,
     setReduceMotion,
     setOpenLinksExternally,
     setColorMode,
     setBackground,
+    setPanel,
     resetToDefault,
   } = useTheme();
 
@@ -229,6 +231,55 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({ isOpen, onClose })
               );
             })}
           </div>
+        </div>
+
+        {/* DISPLAY PANEL Section — OLED vs standard black level */}
+        <div className="mb-6">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
+            DISPLAY PANEL
+          </span>
+          <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+            OLED drives the background to true black so the pixels switch off entirely and save
+            power. Standard keeps lifted dark greys, which stay smoother on LCD panels.
+          </p>
+
+          <div className="grid grid-cols-2 gap-2">
+            {PANEL_OPTIONS.map((option) => {
+              const isActive = config.panel === option.id;
+              return (
+                <button
+                  key={option.id}
+                  onClick={() => setPanel(option.id)}
+                  aria-pressed={isActive}
+                  className={`px-3 py-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                    isActive
+                      ? 'border-violet-500 bg-violet-600/25 text-white shadow-[0_0_10px_rgba(139,92,246,0.25)]'
+                      : 'border-white/[0.08] bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/[0.06]'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    {/* Miniature of what the choice actually does to the canvas. */}
+                    <span
+                      aria-hidden="true"
+                      className={`inline-block h-3 w-3 rounded-[4px] border ${
+                        option.id === 'oled'
+                          ? 'border-white/25 bg-black'
+                          : 'border-white/20 bg-[#0a0a0f]'
+                      }`}
+                    />
+                    <span className="text-xs font-bold">{option.label}</span>
+                  </span>
+                  <span className="block text-[10px] mt-1 opacity-80">{option.hint}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {config.panel === 'oled' && !isDark && (
+            <p className="text-[10px] text-amber-300/80 mt-2 leading-relaxed">
+              OLED black level applies in dark mode. Switch Display mode to Dark to see it.
+            </p>
+          )}
         </div>
 
         {/* Divider matching reference screenshot */}

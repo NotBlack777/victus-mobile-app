@@ -34,12 +34,13 @@ final class VictusWebViewClient extends WebViewClient {
 
     private static final String ROOT_DOMAIN = "victuscloud.com";
     private static final String ASSETS_HOST = "appassets.androidplatform.net";
+    private static final String ASSETS_HOST_URL = "https://" + ASSETS_HOST;
 
-    private final MainActivity activity;
+    private final VictusPageHost host;
     private final WebViewAssetLoader assetLoader;
 
-    VictusWebViewClient(MainActivity activity, WebViewAssetLoader assetLoader) {
-        this.activity = activity;
+    VictusWebViewClient(VictusPageHost host, WebViewAssetLoader assetLoader) {
+        this.host = host;
         this.assetLoader = assetLoader;
     }
 
@@ -55,7 +56,17 @@ final class VictusWebViewClient extends WebViewClient {
     @Override
     public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
         Uri uri = request.getUrl();
-        if (isInternalHost(uri)) return false; // stay inside the app
+        if (isInternalHost(uri)) {
+            // Reference-app setting: when "Open links externally" is on, Victus
+            // Cloud links tapped inside a loaded page go to the device browser.
+            // The bundled home screen and the top-bar dock always stay in-app.
+            String from = view.getUrl();
+            boolean fromBundledHome = from != null && from.startsWith(ASSETS_HOST_URL);
+            if (!fromBundledHome && host.shouldOpenInternalExternally()) {
+                return openExternally(uri);
+            }
+            return false; // stay inside the app
+        }
         return openExternally(uri);
     }
 
@@ -73,6 +84,21 @@ final class VictusWebViewClient extends WebViewClient {
     }
 
     /**
+     * True when the failing certificate belongs to the page currently loaded —
+     * i.e. this is (very likely) the main frame or a same-host subresource, and
+     * the user should see the error screen. A different host means an embedded
+     * third-party resource, which is refused without blanking the page.
+     */
+    private static boolean isSameHostAsPage(WebView view, String failingUrl) {
+        String current = view.getUrl();
+        if (current == null) return true; // can't tell → show the error screen (fail closed)
+        String failingHost = Uri.parse(failingUrl).getHost();
+        String currentHost = Uri.parse(current).getHost();
+        if (failingHost == null || currentHost == null) return true;
+        return failingHost.equalsIgnoreCase(currentHost);
+    }
+
+    /**
      * Hands a non-internal link to the system. Handles the {@code intent://}
      * scheme properly (including Play-Store and browser-fallback fallbacks).
      */
@@ -83,25 +109,25 @@ final class VictusWebViewClient extends WebViewClient {
                 intent = Intent.parseUri(uri.toString(), Intent.URI_INTENT_SCHEME);
                 if (intent.getPackage() != null) {
                     try {
-                        activity.startActivity(new Intent(Intent.ACTION_VIEW,
+                        host.context().startActivity(new Intent(Intent.ACTION_VIEW,
                                 Uri.parse("market://details?id=" + intent.getPackage())));
                         return true;
                     } catch (Exception ignored) { /* Play Store absent */ }
                 }
                 String fallback = intent.getStringExtra("browser_fallback_url");
                 if (fallback != null) {
-                    activity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(fallback)));
+                    host.context().startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(fallback)));
                     return true;
                 }
             } else {
                 intent = new Intent(Intent.ACTION_VIEW, uri);
             }
             intent.addCategory(Intent.CATEGORY_BROWSABLE);
-            activity.startActivity(intent);
+            host.context().startActivity(intent);
         } catch (Exception e) {
             // No handler installed for this scheme — stay put, inform the user.
-            android.widget.Toast.makeText(activity,
-                    activity.getString(R.string.no_app_to_handle),
+            android.widget.Toast.makeText(host.context(),
+                    host.context().getString(R.string.no_app_to_handle),
                     android.widget.Toast.LENGTH_SHORT).show();
         }
         return true;
@@ -109,21 +135,22 @@ final class VictusWebViewClient extends WebViewClient {
 
     @Override
     public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-        activity.onPageLoadStarted(url);
+        host.onPageLoadStarted(url);
     }
 
     @Override
     public void onPageFinished(WebView view, String url) {
-        activity.onPageLoadFinished(url);
+        host.onPageLoadFinished(url);
     }
 
     @Override
     public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
         if (!request.isForMainFrame()) return; // subresource failures don't justify an overlay
-        CharSequence description = error.getDescription();
-        activity.showError(
-                (description == null ? "" : description)
-                        + " (code " + error.getErrorCode() + ")",
+        // Say what actually happened: "no internet connection" is something a
+        // person can act on, where "net::ERR_INTERNET_DISCONNECTED" is not.
+        NetworkErrors.Kind kind = NetworkErrors.classify(error.getErrorCode());
+        host.showError(
+                host.context().getString(NetworkErrors.messageFor(kind)),
                 request.getUrl().toString());
     }
 
@@ -133,24 +160,31 @@ final class VictusWebViewClient extends WebViewClient {
         if (!request.isForMainFrame()) return;
         int status = errorResponse.getStatusCode();
         if (status >= 400) {
-            activity.showError("HTTP " + status + " — " + errorResponse.getReasonPhrase(),
+            host.showError("HTTP " + status + " — " + errorResponse.getReasonPhrase(),
                     request.getUrl().toString());
         }
     }
 
     /**
-     * Secure-by-default TLS policy: an invalid certificate always blocks the
-     * page — the old "proceed anyway" pattern must never come back. Silently
-     * calling {@code handler.proceed()} would "fix" the error screen but turn
-     * off certificate validation entirely, which is a real security hole (and
-     * a Play Store policy violation) — not something to do just to make an
-     * error message go away.
+     * Secure-by-default TLS policy. Three rules, in order:
      *
-     * <p>What we <em>can</em> safely do is make the message and next step
-     * actually useful: most SSL_UNTRUSTED / SSL_NOTYETVALID reports in the
-     * wild trace back to the device's system clock being wrong or an outdated
-     * Android System WebView component rather than a real attack, so those two
-     * codes get a specific hint and an "Update WebView" shortcut.</p>
+     * <ol>
+     *   <li><b>Third-party subresources (CDNs, fonts, analytics) are refused
+     *       silently.</b> A single embedded resource on a foreign host with a bad
+     *       certificate must not blank the entire page with a scary error screen —
+     *       the resource is cancelled, the page renders without it. (The page's
+     *       own host failing still gets the full-screen treatment.)</li>
+     *   <li><b>Everything else is cancelled, always.</b> There is no
+     *       certificate override in this app: no preference, no "proceed anyway"
+     *       button, and no code path that calls {@code handler.proceed()}. A
+     *       certificate the device cannot verify is a device problem to fix
+     *       (update Android System WebView, or correct the device's date &amp;
+     *       time) — not something an app may talk its way past.</li>
+     * </ol>
+     *
+     * <p>Blocked main-frame errors still get the error screen, whose message
+     * already points at the two realistic benign causes (stale Android System
+     * WebView, wrong device date &amp; time).</p>
      */
     @Override
     public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
@@ -163,38 +197,45 @@ final class VictusWebViewClient extends WebViewClient {
             }
         }
 
-        // If this is an internal Victus Cloud domain and trust is enabled:
-        // Automatically proceed so the user is not blocked by outdated device root stores.
-        if (isInternal && ThemeManager.isTrustVictusSsl(activity)) {
-            handler.proceed();
+        // Embedded third-party content on a foreign host: refuse the resource,
+        // keep the page. (If we can't tell whose request it was, fall through
+        // and show the full error screen — fail closed, not open.)
+        if (url != null && !isSameHostAsPage(view, url)) {
+            handler.cancel();
             return;
         }
 
         int code = error.getPrimaryError();
+
+        // The connection is always refused. There is no setting, and no code
+        // path, that ever calls handler.proceed(): proceeding past a certificate
+        // error turns TLS off, which is a real security hole and a Play Store
+        // policy violation. The honest escape hatch for a page you still need is
+        // the device browser, which shows its own certificate warning.
         String message;
         boolean offerWebViewUpdate;
         switch (code) {
             case SslError.SSL_UNTRUSTED:
-                message = activity.getString(R.string.error_ssl_untrusted);
+                message = host.context().getString(R.string.error_ssl_untrusted);
                 offerWebViewUpdate = true;
                 break;
             case SslError.SSL_NOTYETVALID:
-                message = activity.getString(R.string.error_ssl_notyetvalid);
+                message = host.context().getString(R.string.error_ssl_notyetvalid);
                 offerWebViewUpdate = true;
                 break;
             case SslError.SSL_EXPIRED:
-                message = activity.getString(R.string.error_ssl_expired);
+                message = host.context().getString(R.string.error_ssl_expired);
                 offerWebViewUpdate = false;
                 break;
             case SslError.SSL_IDMISMATCH:
-                message = activity.getString(R.string.error_ssl_mismatch);
+                message = host.context().getString(R.string.error_ssl_mismatch);
                 offerWebViewUpdate = false;
                 break;
             default:
-                message = activity.getString(R.string.error_ssl_generic, code);
+                message = host.context().getString(R.string.error_ssl_generic, code);
                 offerWebViewUpdate = false;
                 break;
         }
-        activity.showSslError(handler, message, url, offerWebViewUpdate, isInternal);
+        host.showSslError(handler, message, url, offerWebViewUpdate, isInternal);
     }
 }

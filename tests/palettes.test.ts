@@ -4,6 +4,7 @@ import {
   BASE_DARK,
   BASE_LIGHT,
   CSS_VAR_NAMES,
+  PANEL_OPTIONS,
   PRESETS,
   THEME_PRESET_OPTIONS,
   TOKEN_KEYS,
@@ -113,6 +114,12 @@ const stripBgImage = (tokens: Tokens): Omit<Tokens, 'bgImage'> => {
   return rest;
 };
 
+/** Alpha channel of an `rgba(...)` token, or -1 when it is a solid colour. */
+const parseAlpha = (value: string): number => {
+  const match = value.match(/rgba\([^)]*?,\s*([0-9.]+)\s*\)$/);
+  return match ? Number(match[1]) : -1;
+};
+
 describe('theme palettes', () => {
   test('Purple → Black resolves to its original dark values', () => {
     const tokens = resolveTokens('purple_black', true, ['#c084fc', '#7c3aed', '#0a0a0f']);
@@ -208,5 +215,62 @@ describe('theme palettes', () => {
       'starfield',
       'none',
     ]);
+  });
+});
+
+describe('OLED display panel', () => {
+  test('the standard panel is the default and leaves every token untouched', () => {
+    // resolveTokens must stay backward compatible: three arguments means the
+    // standard (LCD) panel, and the pinned theme values must not move.
+    expect(resolveTokens('purple_black', true, PRESETS.purple_black.accents)).toEqual(BASE_DARK);
+    expect(resolveTokens('purple_black', true, PRESETS.purple_black.accents, 'lcd')).toEqual(
+      BASE_DARK
+    );
+  });
+
+  test('OLED drives the canvas to true black', () => {
+    const tokens = resolveTokens('purple_black', true, PRESETS.purple_black.accents, 'oled');
+    expect(tokens.bg).toBe('#000000');
+    expect(tokens.bgImage).not.toContain('linear-gradient(180deg');
+  });
+
+  test('OLED keeps every layer readable without a grey wash', () => {
+    const oled = resolveTokens('blue_teal', true, PRESETS.blue_teal.accents, 'oled');
+    // Surfaces stay translucent so the animated backdrop still shows through.
+    expect(oled.panel).toContain('rgba(');
+    expect(oled.panelStrong).toContain('rgba(');
+    // Separation comes from borders and text contrast, not from lifting grey.
+    expect(oled.text).toBe('#ffffff');
+    expect(oled.titleText).toBe('#ffffff');
+    expect(parseAlpha(oled.divider)).toBeGreaterThan(parseAlpha(BASE_DARK.divider));
+    expect(parseAlpha(oled.lineSoft)).toBeGreaterThan(parseAlpha(BASE_DARK.lineSoft));
+  });
+
+  test('OLED accents come from the active theme, so every preset gets one', () => {
+    for (const preset of Object.keys(PRESETS) as (keyof typeof PRESETS)[]) {
+      const accents = PRESETS[preset].accents;
+      const oled = resolveTokens(preset, true, accents, 'oled');
+      expect(oled.line).toContain(hexToRgb(accents[0]));
+      expect(oled.arrowText).toBe(accents[0]);
+    }
+  });
+
+  test('OLED covers custom palettes too', () => {
+    const oled = resolveTokens('custom', true, ['#2f81ff', '#13c8a6', '#13c8a6'], 'oled');
+    expect(oled.bg).toBe('#000000');
+    expect(oled.line).toBe(`rgba(${hexToRgb('#2f81ff')}, 0.34)`);
+  });
+
+  test('OLED is inert in light mode, where true black would be wrong', () => {
+    const light = resolveTokens('purple_black', false, PRESETS.purple_black.accents, 'oled');
+    expect(light).toEqual(BASE_LIGHT);
+  });
+
+  test('the picker offers both panels and nothing else', () => {
+    expect(PANEL_OPTIONS.map((option) => option.id)).toEqual(['oled', 'lcd']);
+    for (const option of PANEL_OPTIONS) {
+      expect(option.label.length).toBeGreaterThan(0);
+      expect(option.hint.length).toBeGreaterThan(0);
+    }
   });
 });
