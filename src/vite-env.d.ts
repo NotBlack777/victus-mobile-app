@@ -53,6 +53,11 @@ interface VictusNativeBridge {
   appVersion?: () => string;
   /** Re-runs the admin-role probe immediately, ignoring its interval floor. */
   shellRefreshAdminAccess?: () => void;
+  /**
+   * The page's inner scroller moved off the top, so pull-to-refresh must stand
+   * down. The WebView cannot derive this itself: the document never scrolls.
+   */
+  shellSetPageScrolledAwayFromTop?: (away: boolean) => void;
   /** The system back button's behaviour: WebView history, then Home, then exit. */
   shellBack?: () => void;
   /** Reloads the page currently in the WebView (the web header's refresh). */

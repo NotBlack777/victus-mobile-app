@@ -1,5 +1,36 @@
 # Changelog
 
+## Victus Cloud 4.6.8 (the gesture check no longer fails on its own timing)
+
+`versionCode 56` / `versionName 4.6.8`. **Install this over 4.6.7.**
+
+### Fixed
+
+**A race inside the new gesture check, not a product bug.** 4.6.7's tag build
+failed on `the content box is a real scroller  [overflow-y=visible]`. The app was
+fine: the check read the computed style once, on a runner slow enough that the
+stylesheet had not been applied yet, so it read the *default* `overflow-y` value
+instead of the app's. The check now waits for the stylesheet to land before
+reading, so it measures the app rather than the runner's speed.
+
+Worth stating plainly, because it contradicts three long-standing bug reports:
+on the staged 4.6.7 assets the bubble **does** drag (up 144px, left 96px) and a
+plain tap **does** open the chat. The app shell is deliberately one screen tall
+with exactly one inner scroller, which is the normal app-shell shape — the
+4.6.4 change that made the *document* scroll was reverted because it left a
+blank region below the content and pushed the bubble outside the frame it is
+clamped to.
+
+### Added
+
+**Pull-to-refresh now asks the page, not the WebView.** The shell is one screen
+tall and `.app-content` is the scroller, so `WebView.canScrollVertically(-1)` is
+permanently `false` and permanently wrong: it made every downward drag look like
+a pull-to-refresh. The page reports its own scroll position over the new
+`shellSetPageScrolledAwayFromTop` bridge, and the shell trusts that for our own
+pages while still deferring to the WebView for external sites, which scroll the
+document as usual.
+
 ## Victus Cloud 4.6.7 (the gestures are finally tested)
 
 `versionCode 55` / `versionName 4.6.7`. **Install this over 4.6.6.**

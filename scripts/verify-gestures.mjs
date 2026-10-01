@@ -125,6 +125,17 @@ await page.waitForSelector('[aria-label="Open support chat"]', { timeout: 20000 
 // The shell is deliberately one screen tall with exactly one inner scroller
 // (`.app-content`), so scrolling is not a document scroll — a test that asserts
 // on window.scrollY would report a failure for a page that scrolls perfectly.
+// The shell is rendered before its stylesheet has necessarily been applied, so
+// the computed value is polled rather than read once: `visible` here means "the
+// CSS has not landed yet", not "the app is broken". Without this the check
+// fails intermittently on a slow runner for no reason at all.
+await page.waitForFunction(() => {
+  const content = document.querySelector('.app-content');
+  if (!content) return false;
+  const overflow = getComputedStyle(content).overflowY;
+  return overflow === 'auto' || overflow === 'scroll';
+}, undefined, { timeout: 20000 }).catch(() => {});
+
 const metrics = await page.evaluate(() => {
   const content = document.querySelector('.app-content');
   return {

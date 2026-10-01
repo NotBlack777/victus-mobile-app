@@ -1050,11 +1050,33 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
      * and the test would pass or fail for the wrong reason.</p>
      */
     protected boolean webViewCanScrollUp() {
+        // The page scrolls inside its own box (.app-content), so the WebView's own
+        // scroll flag is always false and always wrong: reading it made every drag
+        // look like a pull-to-refresh. The page tells us instead, on its scroll
+        // event, whether it is currently away from the top.
+        if (pageScrolledAwayFromTop) return true;
+
+        // External sites (and anything not running our shell) scroll the document
+        // itself, so their answer is the WebView's.
         if (webView == null) return true;
         if (Build.VERSION.SDK_INT >= 23) return webView.canScrollVertically(-1);
         // Pre-23 has no public equivalent; assume the page can scroll rather than
         // risk stealing a gesture, which is the failure this whole fix is about.
         return true;
+    }
+
+    /**
+     * Set by the page while its own scroll box is away from the top.
+     *
+     * <p>Plain volatile field rather than a bridge round-trip: this is read on the
+     * UI thread during touch dispatch, where a synchronous answer is required and
+     * anything asynchronous would arrive after the gesture was already decided.</p>
+     */
+    private volatile boolean pageScrolledAwayFromTop = false;
+
+    /** Called by the page's scroll handler; see {@link #webViewCanScrollUp()}. */
+    void setPageScrolledAwayFromTop(boolean away) {
+        pageScrolledAwayFromTop = away;
     }
 
     /**
@@ -1751,6 +1773,20 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         @JavascriptInterface
         public String shellUiState() {
             return activity.shellUiStateJson();
+        }
+
+        /**
+         * Reports whether the app's own scroll box is away from the top.
+         *
+         * <p>The shell is exactly one screen tall and the content box inside it
+         * is the scroller, so {@code WebView.canScrollVertically} can never
+         * describe it. Native pull-to-refresh asks this instead: it is the only
+         * way to tell "the user is at the top and may pull" from "the user is
+         * halfway down a long page and is scrolling".</p>
+         */
+        @JavascriptInterface
+        public void shellSetPageScrolledAwayFromTop(boolean away) {
+            activity.setPageScrolledAwayFromTop(away);
         }
 
         /**

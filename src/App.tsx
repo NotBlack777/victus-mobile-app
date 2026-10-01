@@ -14,7 +14,7 @@ import { ErrorOverlay } from './components/ErrorOverlay.tsx';
 import { BackgroundFX } from './components/BackgroundFX.tsx';
 import { DockTab } from './types.ts';
 import { useAuth } from './context/AuthContext.tsx';
-import { hasShellBridge, shellBack, shellRefresh } from './services/victusBridge.ts';
+import { hasShellBridge, shellBack, shellRefresh, shellSetPageScrolledAwayFromTop } from './services/victusBridge.ts';
 
 interface HistoryEntry {
   tabId: string;
@@ -79,6 +79,34 @@ export const App: React.FC = () => {
 
   // Never leave timers running (or the bar stuck visible) after unmount.
   useEffect(() => clearLoadingTimers, [clearLoadingTimers]);
+
+  /**
+   * Keeps the native pull-to-refresh honest about where the page is.
+   *
+   * <p>The app scrolls inside `.app-content`, not in the document, so the
+   * WebView's own scroll flag is permanently false and the shell would treat
+   * every downward drag as a pull. This reports the real position instead. It
+   * is attached to the scroller rather than the window precisely because
+   * window scroll never moves here.</p>
+   */
+  useEffect(() => {
+    const scroller = document.querySelector('.app-content');
+    if (!scroller) return;
+    let reported = false;
+    const report = () => {
+      const away = scroller.scrollTop > 2;
+      if (away !== reported) {
+        reported = away;
+        shellSetPageScrolledAwayFromTop(away);
+      }
+    };
+    scroller.addEventListener('scroll', report, { passive: true });
+    report();
+    return () => {
+      scroller.removeEventListener('scroll', report);
+      shellSetPageScrolledAwayFromTop(false);
+    };
+  }, []);
 
   const navigateTo = useCallback(
     (url: string, title?: string, tabId?: string) => {

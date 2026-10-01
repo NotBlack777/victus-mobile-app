@@ -217,19 +217,19 @@ body::before {
 .app-shell {
   position: relative;
   width: 100vw;
-  /* The document — not an inner box — must be the thing that scrolls.
-     A fixed-height, overflow:hidden shell makes the page exactly viewport
-     tall, so the WebView honestly reports "cannot scroll up", every drag
-     looks like a pull-to-refresh, and nothing on any page ever moves. The
-     shell therefore grows with its content; the chrome is sticky instead
-     of fixed, so it stays put while the content flows underneath it. */
-  min-height: 100vh;
-  min-height: 100dvh; /* mobile browsers: excludes URL bar */
-  overflow-x: hidden;
-  overflow-y: visible;
+  /* One screen tall, and the content box inside it is the scroller.
+     Letting the *document* scroll instead was tried in 4.6.4 and reverted:
+     the shell grew to its full content height, which opened a blank region
+     below the content and moved the draggable chat bubble out of the
+     viewport it is measured against. A fixed shell with exactly one inner
+     scroller is the standard app-shell shape, has no blank tail, and gives
+     the native pull-to-refresh a single, predictable place to ask about. */
+  height: 100vh;
+  height: 100dvh; /* mobile browsers: excludes URL bar */
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  touch-action: pan-y;
+  touch-action: manipulation;
 }
 
 /* Desktop: render the app in a phone-sized frame */
@@ -260,18 +260,25 @@ body::before {
 
 /* Only the scrollable content between the top bar and dock scrolls */
 .app-content {
-  flex: 1 1 auto;
+  /* `flex: 1 1 0` + `min-height: 0` is what lets this box be smaller than its
+     content; without the min-height a flex item refuses to shrink below its
+     content and the shell overflows instead of scrolling. It is the scroller. */
+  flex: 1 1 0;
   min-height: 0;
   position: relative;
   z-index: 10;
   display: flex;
   flex-direction: column;
-  overflow: visible;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
 }
 
-/* Chrome floats over the scrolling document rather than owning it. */
+/* The chrome is a sibling that must never be squeezed or scrolled away. */
 .app-chrome {
-  position: sticky;
+  flex: 0 0 auto;
+  position: relative;
   z-index: 20;
 }
 .app-chrome-top {

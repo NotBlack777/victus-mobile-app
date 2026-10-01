@@ -399,6 +399,18 @@ export function shellOpenExternal(): void {
 }
 
 /**
+ * Tells the shell whether the app's own scroll box is away from the top.
+ *
+ * <p>The shell is one screen tall and the content box inside it is the scroller,
+ * so the WebView's scroll flag can never describe the page. Native
+ * pull-to-refresh reads this to decide whether a downward drag is a pull or a
+ * scroll. Safe no-op in a browser.</p>
+ */
+export function shellSetPageScrolledAwayFromTop(away: boolean): void {
+  window.VictusNative?.shellSetPageScrolledAwayFromTop?.(away);
+}
+
+/**
  * Which admin areas the signed-in account may use. Empty outside the APK, for a
  * demo account, and for any account without an admin role — so a normal user
  * never sees an admin toggle, a hint, or a preview of one.

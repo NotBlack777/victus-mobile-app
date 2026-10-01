@@ -36,33 +36,54 @@ beforeEach(() => {
 
 describe('the page can actually scroll', () => {
   // The reported symptom was "I cannot scroll up or down on ANY page, and
-  // pull-to-refresh keeps coming up". The cause was pure CSS and lived in the
-  // stylesheet, which is why fixing only the native pull-to-refresh layout
-  // changed nothing: the document was never taller than the viewport, so the
-  // WebView truthfully reported "cannot scroll up" and every drag was a pull.
-  test('the shell grows with its content instead of being a fixed-height box', () => {
+  // pull-to-refresh keeps coming up". The cause was pure CSS: nothing in the
+  // stylesheet was ever a scroller, so the document was never taller than the
+  // viewport, the WebView truthfully reported "cannot scroll up", and every
+  // drag became a pull.
+  test('the shell is exactly one screen tall and clips its own overflow', () => {
     const shell = rule('.app-shell');
-    // A fixed viewport height caps the document at the viewport.
-    expect(shell).not.toMatch(/(^|\s)height:\s*100d?vh/);
-    expect(shell).toMatch(/min-height:\s*100d?vh/);
+    expect(shell).toMatch(/height:\s*100d?vh/);
+    expect(shell).toMatch(/overflow:\s*hidden/);
+    // A min-height here is what let the shell grow past the viewport in 4.6.4,
+    // opening the blank region below the content that 4.6.7 reverts.
+    expect(shell).not.toMatch(/min-height/);
   });
 
-  test('nothing clips the content away from the scroller', () => {
-    // `overflow: hidden` on the shell or the content box swallows the overflow
-    // instead of letting it reach the document, which is what made every page
-    // unscrollable.
-    expect(rule('.app-shell')).not.toMatch(/overflow:\s*hidden/);
-    expect(rule('.app-content')).not.toMatch(/overflow:\s*hidden/);
-    expect(rule('.app-content')).not.toMatch(/flex:\s*1 1 0\b/);
+  test('the content box is the one scroller', () => {
+    const content = rule('.app-content');
+    expect(content).toMatch(/overflow-y:\s*auto/);
+    // `overflow: hidden` here swallows the content instead of scrolling it —
+    // the exact defect that made every page unscrollable.
+    expect(content).not.toMatch(/overflow(-y)?:\s*hidden/);
+    // These two together are what let a flex item be smaller than its content.
+    expect(content).toMatch(/flex:\s*1 1 0/);
+    expect(content).toMatch(/min-height:\s*0/);
   });
 
-  test('the chrome sticks instead of being taken out of flow', () => {
-    // Sticky, not fixed: fixed would need the document to scroll anyway, but it
-    // also took the bars out of flow, which is what let content hide under
-    // them once the shell stopped clipping.
-    expect(rule('.app-chrome')).toMatch(/position:\s*sticky/);
-    expect(rule('.app-chrome-top')).toMatch(/top:\s*0/);
-    expect(rule('.app-chrome-bottom')).toMatch(/bottom:\s*0/);
+  test('the scroller owns its overscroll so a pull cannot chain', () => {
+    expect(rule('.app-content')).toMatch(/overscroll-behavior-y:\s*contain/);
+  });
+
+  test('the chrome is a fixed sibling, never squeezed or scrolled away', () => {
+    expect(rule('.app-chrome')).toMatch(/flex:\s*0 0 auto/);
+  });
+
+  test('the page tells the shell where the scroller is', async () => {
+    const { shellSetPageScrolledAwayFromTop } = await import('../src/services/victusBridge.ts');
+    // The WebView's own scroll flag can never describe an in-shell scroller, so
+    // this is the only signal native pull-to-refresh has.
+    let calls: boolean[] = [];
+    w.VictusNative = {
+      shellSetPageScrolledAwayFromTop: (away: boolean) => { calls.push(away); },
+    };
+    shellSetPageScrolledAwayFromTop(true);
+    shellSetPageScrolledAwayFromTop(false);
+    expect(calls).toEqual([true, false]);
+  });
+
+  test('reporting scroll position is a safe no-op in a browser', async () => {
+    const { shellSetPageScrolledAwayFromTop } = await import('../src/services/victusBridge.ts');
+    expect(() => shellSetPageScrolledAwayFromTop(true)).not.toThrow();
   });
 });
 
