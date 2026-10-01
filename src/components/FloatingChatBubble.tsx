@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MessageSquare, LifeBuoy, X, Send, ExternalLink } from 'lucide-react';
 import { useToast } from './Toast.tsx';
-import { shellSetDragging } from '../services/victusBridge.ts';
+import { shellSetDragging, shellSetDragRegion } from '../services/victusBridge.ts';
 
 interface FloatingChatBubbleProps {
   onNavigateSupport: () => void;
@@ -69,6 +69,64 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ onNaviga
     if (typeof window === 'undefined') return candidate;
     return clampToFrame(candidate.x, candidate.y);
   });
+
+  const bubbleRef = useRef<HTMLButtonElement | null>(null);
+
+  // Tell the shell where the bubble is, so it can protect a touch that lands on
+  // it during ACTION_DOWN — before pull-to-refresh gets a chance to intercept.
+  // Reported whenever the bubble moves, and scaled by devicePixelRatio so the
+  // numbers line up with the MotionEvent coordinates the shell compares them to.
+  useEffect(() => {
+    let frame = 0;
+    let settleTimer: number | null = null;
+    const measure = () => {
+      const node = bubbleRef.current;
+      if (!node) {
+        shellSetDragRegion(null);
+        return;
+      }
+      const rect = node.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      // A zero-area rect would silently disable the protection, which is the
+      // exact failure this exists to prevent, so report a point rather than
+      // nothing when layout has not happened yet.
+      shellSetDragRegion({
+        left: rect.left * dpr,
+        top: rect.top * dpr,
+        right: Math.max(rect.right, rect.left + 1) * dpr,
+        bottom: Math.max(rect.bottom, rect.top + 1) * dpr,
+      });
+    };
+    const report = () => {
+      frame = 0;
+      measure();
+      // The button animates its transform (duration-75), so a reading taken
+      // during a drag describes where the bubble is passing through, not where
+      // it ends up. Re-measure once it has settled, so the shell is never
+      // left protecting a rectangle the bubble has already left.
+      if (settleTimer !== null) window.clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(() => {
+        settleTimer = null;
+        measure();
+      }, 160);
+    };
+    const schedule = () => {
+      if (frame !== 0) return;
+      frame = window.requestAnimationFrame(report);
+    };
+    schedule();
+    window.addEventListener('resize', schedule);
+    window.addEventListener('orientationchange', schedule);
+    return () => {
+      if (frame !== 0) window.cancelAnimationFrame(frame);
+      if (settleTimer !== null) window.clearTimeout(settleTimer);
+      window.removeEventListener('resize', schedule);
+      window.removeEventListener('orientationchange', schedule);
+      // Leaving a stale region behind would let an invisible box swallow
+      // pull-to-refresh gestures on a screen the bubble no longer occupies.
+      shellSetDragRegion(null);
+    };
+  }, [position.x, position.y]);
 
   const [isDragging, setIsDragging] = useState(false);
   const [isChatModalOpen, setIsChatModalOpen] = useState(false);
@@ -262,6 +320,7 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ onNaviga
       {/* Draggable Floating Chat Ball */}
       <button
         type="button"
+        ref={bubbleRef}
         aria-label="Open support chat"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}

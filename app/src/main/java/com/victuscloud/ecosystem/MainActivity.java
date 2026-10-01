@@ -16,6 +16,7 @@ import android.util.TypedValue;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
@@ -549,12 +550,31 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         pullRefresh.setOnChildScrollUpCallback((parent, child) -> webViewCanScrollUp());
 
         // Same gesture, opposite direction: a drag on the draggable chat bubble
-        // is a drag, not a scroll and not a refresh. The page signals it here so
-        // the layout stands down for the duration of the drag.
+        // is a drag, not a scroll and not a refresh.
+        //
+        // The page tells us where the bubble is *before* the gesture starts, so
+        // that a touch landing on it can be protected synchronously in
+        // ACTION_DOWN. Waiting for the page to say "a drag started" cannot work:
+        // ACTION_DOWN is already being dispatched by the time the page's
+        // pointerdown handler runs, and the flag would then queue behind the
+        // ACTION_MOVEs on the input channel, letting this layout intercept the
+        // drag and cancel it. That is why the bubble drags under a desktop mouse
+        // and dies under a finger.
         webView.setOnTouchListener((v, event) -> {
-            if (dragInProgress) {
-                // Consume nothing: the bubble handles its own gesture. Just make
-                // sure the parent cannot intercept it out from under the page.
+            final int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN) {
+                onTouchDown(event.getX(), event.getY());
+                if (dragGestureLikely) {
+                    // Consume nothing: the bubble handles its own gesture. Just
+                    // stop the parent from intercepting it out from under the page.
+                    v.getParent().requestDisallowInterceptTouchEvent(true);
+                }
+            } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                // Must be cleared here as well as in the page: a gesture that ends
+                // outside the WebView would otherwise leave pull-to-refresh dead.
+                dragGestureLikely = false;
+            }
+            if (dragInProgress || dragGestureLikely) {
                 v.getParent().requestDisallowInterceptTouchEvent(true);
             }
             return false;
@@ -1050,6 +1070,11 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
      * and the test would pass or fail for the wrong reason.</p>
      */
     protected boolean webViewCanScrollUp() {
+        // A drag on the bubble must never be read as a pull. Decided in
+        // ACTION_DOWN from the region the page published, so this is already
+        // correct by the time the refresh layout asks.
+        if (isDragGestureProtected()) return true;
+
         // The page scrolls inside its own box (.app-content), so the WebView's own
         // scroll flag is always false and always wrong: reading it made every drag
         // look like a pull-to-refresh. The page tells us instead, on its scroll
@@ -1080,12 +1105,91 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
     }
 
     /**
+     * Records the draggable bubble's bounds, in the WebView's device pixels.
+     *
+     * <p>Package-private and taking primitives rather than a parsed object so a
+     * test can exercise exactly what the bridge hands it.</p>
+     */
+    void setDragRegion(float left, float top, float right, float bottom) {
+        dragRegion = new float[] { left, top, right, bottom };
+    }
+
+    /** Forgets the drag region, restoring ordinary pull-to-refresh everywhere. */
+    void clearDragRegion() {
+        dragRegion = null;
+        dragGestureLikely = false;
+    }
+
+    /**
+     * Arms the drag protection for a touch that has just begun.
+     *
+     * <p>Called from {@code ACTION_DOWN} in the touch listener and the single
+     * place that decision is made, so the rule a test exercises is the rule the
+     * gesture actually gets.</p>
+     *
+     * @return true if this touch began on the draggable bubble
+     */
+    boolean onTouchDown(float x, float y) {
+        dragGestureLikely = touchStartsInDragRegion(x, y);
+        return dragGestureLikely;
+    }
+
+    /** Whether a touch at these WebView-local coordinates starts on the bubble. */
+    boolean touchStartsInDragRegion(float x, float y) {
+        final float[] region = dragRegion;
+        if (region == null) return false;
+        return x >= region[0] && x <= region[2] && y >= region[1] && y <= region[3];
+    }
+
+    /**
+     * Whether the pull-to-refresh layout must stand down for the touch in flight.
+     *
+     * <p>True once a touch has begun on the draggable bubble — decided in
+     * {@code ACTION_DOWN}, i.e. before any layout can intercept — and while the
+     * page reports a drag in progress.</p>
+     */
+    boolean isDragGestureProtected() {
+        return dragGestureLikely || dragInProgress;
+    }
+
+    /**
      * Set by the page while a custom drag (the chat bubble) is in progress, so
      * pull-to-refresh stands down for that gesture instead of treating it as a
      * pull. Plain field, not a bridge round-trip: it is read on the UI thread
      * during touch dispatch and never outlives the gesture.
      */
-    private volatile boolean dragInProgress = false;    /**
+    private volatile boolean dragInProgress = false;
+
+    /**
+     * The draggable bubble's bounds, in the WebView's own device pixels.
+     *
+     * <p>Reported by the page <em>before</em> a drag begins, because a flag set
+     * from the page's {@code pointerdown} handler always arrives too late: that
+     * handler runs only once the WebView already holds the touch, and the flag
+     * then crosses renderer → binder → UI-thread queue while the next
+     * {@code ACTION_MOVE} arrives on the higher-priority input channel. The
+     * refresh layout checks for interception on every move, so it wins, sends
+     * {@code ACTION_CANCEL}, and the drag dies. Knowing the bounds up front lets
+     * {@link #createLayout()} protect the touch synchronously in
+     * {@code ACTION_DOWN}, before any parent layout sees it.</p>
+     *
+     * <p>A null region means "nothing is draggable" and disables the protection,
+     * which is the safe default: pull-to-refresh must keep working everywhere
+     * else.</p>
+     */
+    private float[] dragRegion = null;
+
+    /**
+     * True from {@code ACTION_DOWN} until {@code ACTION_UP}/{@code ACTION_CANCEL}
+     * when that touch began inside {@link #dragRegion}.
+     *
+     * <p>Set before {@code SwipeRefreshLayout} is given the chance to intercept,
+     * and cleared with it, so it cannot leave pull-to-refresh permanently
+     * disabled.</p>
+     */
+    private boolean dragGestureLikely = false;
+
+    /**
      * Pushes the native appearance config into the bundled React app: the live
      * accent gradient + reduce-motion flag as CSS custom properties, plus the
      * full native config object the web ThemeContext now listens for
@@ -1787,6 +1891,40 @@ public class MainActivity extends ComponentActivity implements VictusPageHost {
         @JavascriptInterface
         public void shellSetPageScrolledAwayFromTop(boolean away) {
             activity.setPageScrolledAwayFromTop(away);
+        }
+
+        /**
+         * Publishes where the draggable bubble is, in the WebView's device pixels.
+         *
+         * <p>Called whenever the bubble moves and when the page unmounts, and
+         * deliberately <em>not</em> only when a drag starts: see
+         * {@link MainActivity#dragRegion} for the race that would otherwise let
+         * pull-to-refresh intercept and cancel the drag.</p>
+         */
+        @JavascriptInterface
+        public void shellSetDragRegion(String encoded) {
+            // "left,top,right,bottom" in device pixels, or "none" to clear.
+            // A string rather than four numbers so a clear is representable at
+            // all, and so a malformed value can be rejected instead of silently
+            // becoming a region that swallows pull-to-refresh.
+            if (encoded == null || "none".equals(encoded)) {
+                activity.clearDragRegion();
+                return;
+            }
+            final String[] parts = encoded.split(",");
+            if (parts.length != 4) {
+                activity.clearDragRegion();
+                return;
+            }
+            try {
+                activity.setDragRegion(
+                        Float.parseFloat(parts[0].trim()),
+                        Float.parseFloat(parts[1].trim()),
+                        Float.parseFloat(parts[2].trim()),
+                        Float.parseFloat(parts[3].trim()));
+            } catch (NumberFormatException malformed) {
+                activity.clearDragRegion();
+            }
         }
 
         /**

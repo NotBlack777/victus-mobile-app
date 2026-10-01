@@ -80,6 +80,7 @@ await page.addInitScript(() => {
     },
   }));
 
+  window.__dragRegions = [];
   window.VictusNative = {
     authRestore: (cb) => window.__victusBridgeResolve(cb, { ok: false, state: 'error', message: 'signed out' }),
     authSignIn: (user, _pass, cb) => window.__victusBridgeResolve(cb, session(user)),
@@ -95,6 +96,10 @@ await page.addInitScript(() => {
     shellUiState: () => JSON.stringify({ adminAreas: [], updateAvailable: false, canGoBack: false, isLoading: false }),
     appVersion: () => '9.9.9',
     shellSetDragging: () => {},
+    // Records what the shell was told, so the gesture contract can be checked
+    // rather than assumed. The native side needs the bubble's bounds *before* a
+    // drag starts; see the drag-region checks below.
+    shellSetDragRegion: (encoded) => { window.__dragRegions.push(String(encoded)); },
     shellSetColorMode: () => {},
     shellRefreshAdminAccess: () => {},
     totpWindowState: () => JSON.stringify({ secondsRemaining: 30, millisUntilNext: 1000, periodSeconds: 30, synced: true, offsetMillis: 0 }),
@@ -214,6 +219,98 @@ await page.mouse.click(boxTap.x + boxTap.width / 2, boxTap.y + boxTap.height / 2
 await page.waitForTimeout(500);
 const chatOpened = await page.locator('text=Victus Live Support').count();
 check('a plain tap opens the chat', chatOpened > 0, `matches=${chatOpened}`);
+
+// ------------------------------------------------- the native drag contract
+// Everything above drives the page with a *mouse*. A phone sends touch events
+// through a SwipeRefreshLayout that no browser test has, and that is precisely
+// where the bubble used to die: the shell learned "a drag started" only from
+// the page's pointerdown handler, which runs after ACTION_DOWN and whose answer
+// then queues behind the ACTION_MOVEs, so the refresh layout intercepted the
+// drag and cancelled it. These checks pin the contract that closes that race:
+// the bubble must publish where it is, in device pixels, before any drag.
+
+// The chat sheet is a full-shell backdrop that covers the bubble, so it must be
+// closed first or every gesture below lands on the backdrop instead.
+if (await page.locator('text=Victus Live Support').count()) {
+  await page.locator('button:has(svg.lucide-x)').last().click();
+  await page.waitForTimeout(400);
+  await page.waitForFunction(() => document.querySelector('text=Victus Live Support') === null
+    || !document.body.innerText.includes('Victus Live Support'), undefined, { timeout: 5000 })
+    .catch(() => {});
+}
+
+const regionState = await page.evaluate(() => {
+  const regions = (window.__dragRegions || []).filter((r) => r !== 'none');
+  const bubble = document.querySelector('[aria-label="Open support chat"]');
+  const rect = bubble.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const last = regions[regions.length - 1];
+  let parsed = null;
+  if (last) {
+    const parts = last.split(',').map(Number);
+    if (parts.length === 4 && parts.every((n) => Number.isFinite(n))) parsed = parts;
+  }
+  return {
+    published: regions.length,
+    parsed,
+    expected: [rect.left * dpr, rect.top * dpr, rect.right * dpr, rect.bottom * dpr],
+    dpr,
+  };
+});
+check('the bubble publishes its bounds to the shell, in device pixels',
+  regionState.published > 0 && regionState.parsed !== null,
+  `reports=${regionState.published} dpr=${regionState.dpr}`);
+check('the published bounds match where the bubble actually is',
+  regionState.parsed !== null &&
+    ['0', '1', '2', '3'].every((i) =>
+      Math.abs(regionState.parsed[Number(i)] - regionState.expected[Number(i)]) <= 2),
+  `got=${regionState.parsed ? regionState.parsed.map((n) => n.toFixed(0)).join(',') : 'none'} want=${regionState.expected.map((n) => n.toFixed(0)).join(',')}`);
+
+// The bounds must be re-published as the bubble moves, or the shell is
+// protecting a stale region and the next drag is stolen again. The earlier drag
+// parked the bubble at the left edge, so this one aims well clear of the frame
+// it would otherwise be clamped against and silently not move at all.
+const beforeDragCount = regionState.published;
+const republishFrom = await bubble.boundingBox();
+await page.mouse.move(republishFrom.x + republishFrom.width / 2, republishFrom.y + republishFrom.height / 2);
+await page.mouse.down();
+await page.mouse.move(republishFrom.x + republishFrom.width / 2 + 70, republishFrom.y + republishFrom.height / 2 + 50);
+await page.mouse.up();
+await page.waitForTimeout(400);
+const afterDragCount = await page.evaluate(
+  () => (window.__dragRegions || []).filter((r) => r !== 'none').length);
+check('moving the bubble republishes its bounds',
+  afterDragCount > beforeDragCount,
+  `${beforeDragCount} -> ${afterDragCount}`);
+
+// ------------------------------------------------------- touch, not a mouse
+// A mouse proves the page's own handlers work. Only a real touch sequence also
+// exercises the pointer-event path a finger takes through the WebView.
+const cdp = await context.newCDPSession(page);
+const touchDrag = async (from, to) => {
+  const point = (x, y) => [{ x, y, radiusX: 12, radiusY: 12, force: 1 }];
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: point(from.x, from.y) });
+  for (let i = 1; i <= 6; i += 1) {
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: point(from.x + ((to.x - from.x) * i) / 6, from.y + ((to.y - from.y) * i) / 6),
+    });
+    await page.waitForTimeout(16);
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+};
+
+await page.keyboard.press('Escape');
+await page.waitForTimeout(300);
+const touchBoxBefore = await bubble.boundingBox();
+await touchDrag(
+  { x: touchBoxBefore.x + touchBoxBefore.width / 2, y: touchBoxBefore.y + touchBoxBefore.height / 2 },
+  { x: touchBoxBefore.x + touchBoxBefore.width / 2 - 60, y: touchBoxBefore.y + touchBoxBefore.height / 2 - 90 });
+await page.waitForTimeout(300);
+const touchBoxAfter = await bubble.boundingBox();
+check('a finger drag moves the bubble, not just a mouse',
+  (touchBoxBefore.y - touchBoxAfter.y) > 30 || (touchBoxBefore.x - touchBoxAfter.x) > 30,
+  `up=${(touchBoxBefore.y - touchBoxAfter.y).toFixed(0)}px left=${(touchBoxBefore.x - touchBoxAfter.x).toFixed(0)}px`);
 
 await browser.close();
 console.log(`\n${failures === 0 ? 'all gesture checks passed' : `${failures} gesture check(s) FAILED`}`);

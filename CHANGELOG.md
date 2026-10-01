@@ -1,5 +1,51 @@
 # Changelog
 
+## Victus Cloud 4.6.9 (the bubble now drags under a finger, not just a mouse)
+
+`versionCode 57` / `versionName 4.6.9`. **Install this over 4.6.8.**
+
+### Fixed
+
+**The bubble drag was fixed for a mouse and broken for a finger.** 4.6.8's
+gesture check drove the page with mouse events and passed — on a phone the drag
+still died. The cause was a race that no browser-based test can see:
+
+1. `ACTION_DOWN` is dispatched to the WebView.
+2. The page's `pointerdown` handler runs *then*, and calls `shellSetDragging(true)`.
+3. That answer crosses renderer → binder → UI-thread queue, while the next
+   `ACTION_MOVE`s arrive on the higher-priority input channel.
+4. `SwipeRefreshLayout` sees touch-slop exceeded, intercepts, and sends
+   `ACTION_CANCEL` — so the bubble's drag is cancelled before it begins.
+
+The flag could never arrive in time, because protecting the gesture was being
+asked for *after* the touch had already started. The shell is now told where the
+bubble is **in advance**, over a new `shellSetDragRegion` bridge carrying its
+bounds in device pixels (`devicePixelRatio`-scaled, so they match the
+`MotionEvent` coordinates they are compared against). `ACTION_DOWN` can then be
+recognised synchronously, before any parent layout is asked whether it may
+intercept.
+
+With no region published the protection is off and pull-to-refresh behaves
+exactly as before, so a stale or missing value can never silently disable
+pulling. The existing "a drag started" signal still works alongside it.
+
+### Fixed
+
+**The published bounds described where the bubble was passing through.** The
+button animates its transform, so a reading taken during a drag reported a
+rectangle the bubble had already left. It is now re-measured once the movement
+has settled.
+
+### Added
+
+**The gesture check now drives touch, and pins the new contract.** A mouse
+proves the page's own handlers work; only a real touch sequence exercises the
+path a finger takes. The harness now also asserts that the bubble publishes its
+bounds, that the published bounds match where it actually is, that moving it
+republishes them, and that a finger — not just a mouse — drags it. Nine new
+native tests cover the containment rule, the boundary cases, and the fact that a
+near-miss or a cleared region must leave pull-to-refresh working.
+
 ## Victus Cloud 4.6.8 (the gesture check no longer fails on its own timing)
 
 `versionCode 56` / `versionName 4.6.8`. **Install this over 4.6.7.**

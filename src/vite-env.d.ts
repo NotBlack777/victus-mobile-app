@@ -54,6 +54,13 @@ interface VictusNativeBridge {
   /** Re-runs the admin-role probe immediately, ignoring its interval floor. */
   shellRefreshAdminAccess?: () => void;
   /**
+   * Where the draggable chat bubble is, in device pixels, so the shell can
+   * protect a touch landing on it before any parent layout can intercept.
+   * Null clears the region. See shellSetDragRegion for why this must be known
+   * in advance rather than reported once a drag has started.
+   */
+  shellSetDragRegion?: (encoded: string) => void;
+  /**
    * The page's inner scroller moved off the top, so pull-to-refresh must stand
    * down. The WebView cannot derive this itself: the document never scrolls.
    */

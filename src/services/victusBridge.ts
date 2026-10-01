@@ -399,6 +399,36 @@ export function shellOpenExternal(): void {
 }
 
 /**
+ * Tells the shell where the draggable chat bubble is, in DEVICE pixels.
+ *
+ * <p>This exists to close a race, not to add a feature. When a finger lands on
+ * the bubble, {@code ACTION_DOWN} is dispatched to the WebView before the page's
+ * {@code pointerdown} handler has run, so a "a drag started" flag set from that
+ * handler always arrives one hop too late: renderer → binder → UI-thread queue.
+ * A pull-to-refresh layout checks for interception on every {@code ACTION_MOVE},
+ * and those arrive on the input channel ahead of that queued flag. The layout
+ * therefore wins, sends {@code ACTION_CANCEL}, and the bubble's drag dies —
+ * reproducibly on a real phone, and not at all in a desktop mouse-driven test,
+ * which has no such layout and no such queue.</p>
+ *
+ * <p>So the shell is told the bubble's bounds <em>in advance</em>, and can
+ * protect a touch that lands on it during {@code ACTION_DOWN}, synchronously,
+ * before any parent layout gets a chance to intercept. The page scales by
+ * {@code devicePixelRatio} so the values match the {@code MotionEvent}
+ * coordinates the shell compares them against. Null clears the region.</p>
+ *
+ * <p>Safe no-op in a browser.</p>
+ */
+export function shellSetDragRegion(region: { left: number; top: number; right: number; bottom: number } | null): void {
+  // A string, not an object: an object cannot cross @JavascriptInterface, and a
+  // string can represent "no region" as well as a region.
+  const encoded = region
+    ? `${region.left},${region.top},${region.right},${region.bottom}`
+    : 'none';
+  window.VictusNative?.shellSetDragRegion?.(encoded);
+}
+
+/**
  * Tells the shell whether the app's own scroll box is away from the top.
  *
  * <p>The shell is one screen tall and the content box inside it is the scroller,
