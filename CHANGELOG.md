@@ -1,5 +1,34 @@
 # Changelog
 
+## Victus Cloud 4.6.7 (the gestures are finally tested)
+
+`versionCode 55` / `versionName 4.6.7`. **Install this over 4.6.6.**
+
+### Added
+
+**A gesture check that performs the gestures.** Every verification so far
+either read the source and asserted it was correct, or loaded a page and checked
+it rendered. Nothing ever *moved* anything — which is exactly why "the page
+does not scroll", "the chat bubble will not move" and "tapping it does nothing"
+could all survive a completely green build.
+
+`scripts/verify-gestures.mjs` drives the real thing with real input events
+against the staged APK assets, and runs in CI:
+
+- the content box is a real scroller, and a wheel gesture over a page that has
+  more to show actually moves it
+- dragging the chat bubble moves it, measured from its rendered position before
+  and after — not from its source
+- the bubble's transform really changed, so the movement is not an artefact of
+  its hit box
+- a drag does **not** open the chat, and a plain tap **does**
+
+Writing it immediately proved two of the standing bug reports wrong — the
+bubble drags and taps correctly in the current build — and the pull-to-refresh
+chain was already wired correctly (the page reports its own scroll position to
+the shell, because the WebView cannot see an inner scroller). It is now in CI,
+so a regression in any of these fails the build instead of reaching a phone.
+
 ## Victus Cloud 4.6.6 (a way back into the admin area)
 
 `versionCode 54` / `versionName 4.6.6`. **Install this over 4.6.5.**

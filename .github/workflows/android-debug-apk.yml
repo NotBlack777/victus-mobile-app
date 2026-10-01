@@ -97,6 +97,16 @@ jobs:
           bunx playwright install --with-deps chromium
           node scripts/verify-backdrop.mjs
 
+      # Performs the actual gestures with real input events — scroll, drag the
+      # chat bubble, tap it — against the staged APK assets. Every previous
+      # verification either asserted the source was correct or checked that a
+      # page loaded; neither ever moved anything, which is how "the page does
+      # not scroll" and "the bubble will not move" both survived green runs.
+      - name: Gesture check (scroll, drag, tap)
+        run: |
+          bunx playwright install --with-deps chromium
+          node scripts/verify-gestures.mjs app/build/generated/reactAssets
+
       # Drives the app's own VictusApi/VictusHttp against a contract-faithful
       # panel over real TLS sockets: sign-in, server list, power, console. Needs
       # port 443, so it skips itself (exit 3) on a runner that cannot bind it.
